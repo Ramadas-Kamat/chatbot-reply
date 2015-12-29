@@ -13,27 +13,29 @@ import imp
 import inspect
 import os
 import re
+import traceback
 
 import patterns
 import script
-
-from collections import namedtuple
-
 
 #todo : make the class own the topic database
 #strict: ignore vs throw errors? Probably should throw them
 #todo reload script before loading scripts. Have script loader take a list of
 #filenames?
 #todo use imp thread locking
+#should force lowercase be an option?
+#todo, maybe I should call it spycharge...
+
 
 class ChatbotEngine(object):
     """ Scriptable Python Chatbot Reply Generator
 
     Loads pattern/reply rules, using a simplified regular expression grammar
     for the patterns, and decorated Python methods for the rules. Maintains
-    rules and separate variable dictionaries for the chatbot's internal state
-    and for each user. Matches user input to its database of patterns to select
-    a reply rule, which may recursively reference other reply rules.
+    rules, a variable dictionary for the chatbot's internal state plus one
+    for each user conversing with the chatbot. Matches user input to its 
+    database of patterns to select a reply rule, which may recursively reference
+    other reply rules.
 
     How script loading works. How multiple instances of Chatbot have to share.
 
@@ -78,7 +80,6 @@ class ChatbotEngine(object):
         self._uservars = {}
         self._substitutions = {}
         self._topics = {}
-        self._Topic = namedtuple("Topic", ["rules", "alternates"])
         self._new_topic("all")
         self._topics["all"].alternates["colors"] = "(red|green|blue)"
         self._parser = patterns.PatternParser()
@@ -112,10 +113,20 @@ class ChatbotEngine(object):
         if not os.path.isdir(directory):
             self._say("{0} is not a directory".format(directory),
                       warning="Error")
+            return
         self._say("Loading from directory: " + directory)
+
+        self.cache_built = False
         for item in os.listdir(directory):
             if item.lower().endswith(".py"):
-                self._import(os.path.join(directory, item), "pychbotscript")
+                try:
+                    filename = os.path.join(directory, item)
+                    self._import(filename, "pycharge_script")
+                except Exception:
+                    tb = "".join(traceback.format_exc())
+                    self._say("Failed to load {0}\n{1}\n{2}".format(
+                        filename, tb, str(e), warning="Error"))
+
 
         for script_class in script.Script.__subclasses__():
             self._say("Loading scripts from" + script_class.__name__)
@@ -150,21 +161,21 @@ class ChatbotEngine(object):
         if topic not in self._topics:
             self._new_topic(topic)
 
-        script_instance = script_class()
-        script_instance.setUp()
-        for attribute in dir(script_instance):
+        instance = script_class()
+        instance.setUp()
+        for attribute in dir(instance):
             for name, func in dispatch:
                 if (attribute.startswith(name) and
-                    hasattr(getattr(script_instance, attribute), '__call__')):
-                    func(topic, script_instance, attribute)
+                    hasattr(getattr(instance, attribute), '__call__')):
+                    func(topic, instance, attribute)
 
     def _new_topic(self, topic):
-        self._topics[topic] = self._Topic({}, {})
+        self._topics[topic] = Topic()
     
-    def _load_pattern(self, topic, script_instance, attribute):
-        method = getattr(script_instance, attribute)
+    def _load_pattern(self, topic, instance, attribute):
+        method = getattr(instance, attribute)
         argspec = inspect.getargspec(method)
-        classname = script_instance.__class__.__name__
+        classname = instance.__class__.__name__
         if self._check_pattern_spec(classname, attribute, argspec):
             raw_pattern, raw_previous, weight = argspec.defaults
             rule = Rule(raw_pattern, raw_previous, weight, method,
@@ -178,7 +189,7 @@ class ChatbotEngine(object):
                               'ignoring it.'.format(
                               raw_pattern, raw_previous, classname, attribute,
                               existing_rule.rulename, topic),
-                              warning = "Error")
+                              warning = "Warning")
             else:
                 self._topics[topic].rules[tup] = rule
                 self._say('Loaded pattern "{0}", previous="{1}", weight={2}, '
@@ -196,7 +207,7 @@ class ChatbotEngine(object):
             argspec.varargs is not None or
             argspec.keywords is not None or
             len(argspec.defaults) != 3):
-            self.say("Ignoring {0}.{1} because it wasn't decorated by @pattern"
+            self.say("{0}.{1} wasn't decorated by @pattern"
                      "or it has the wrong number of arguments".format(name, func),
                      warning="Error")
             return False
@@ -210,26 +221,39 @@ class ChatbotEngine(object):
         pass
 
     def build_cache(self):
+        if self.cache_built:
+            return
         for topic_name, topic in self._topics.items():
+            topic.sortedrules = sorted(
+                [rule for key, rule
+                 in topic.rules.items()], reverse=True)
             d = {"a" : topic.alternates}
-            for key, rule in topic.rules.items():
+            for rule in topic.sortedrules:
                 rule.cache_regexes(d)
-        # build sorted lists of patterns, per topic
-                
+        self.cache_built = True
+
     
     def reply(self, user, message, depth=0):
         self._say('Asked to reply to: "{0}" from {1}'.format(message, str(user)))
         self._set_user(user)
-
+        self.build_cache()
+        
         target = Target(message, say=self._say)
         reply = ""
-        for k, rule in self._topics["all"].rules.items():
+        for rule in self._topics["all"].sortedrules:
             m = re.match(rule.regexc, target.normalized)
             if m is not None:
                 self._say("Found pattern match, rule {0}".format(
                     rule.rulename))
                 script.Script.match = self._match_dict(m.groupdict())
-                reply = rule.rule()
+                try:
+                    reply = rule.rule()
+                except Exception, e:
+                    tb = "".join(traceback.format_exc())
+                    self._say("Rule {0} failed:\n{1}\n{2}".format(rule.rulename,
+                                                                  str(e), tb),
+                              warning="Error")
+                    continue
                 break
         if not reply:
             self._say("Empty reply generated")
@@ -259,6 +283,12 @@ class ChatbotEngine(object):
             matches[i] = v
         return matches
 
+class Topic(object):
+    def __init__(self):
+        self.rules = {}
+        self.sortedrules = []
+        self.alternates = {}
+    
 class Rule(object):
     """ Pattern matching and response rule.
 
@@ -280,7 +310,8 @@ class Rule(object):
     Public methods:
     cache_regexes --
     match -- returns match object if it does
-
+    full set of comparison operators - to enable sorting first by weight then 
+            score
     """
     _pp = patterns.PatternParser()
     
@@ -326,6 +357,24 @@ class Rule(object):
                 self.formatted_pattern))
             return None
 
+    def __lt__(self, other):
+        return (self.weight < other.weight or
+                (self.weight == other.weight and self.score < other.score))
+    def __eq__(self, other):
+        return self.weight == other.weight and self.score == other.score
+    def __gt__(self, other):
+        return (self.weight > other.weight or
+                (self.weight == other.weight and self.score > other.score))
+    def __le__(self, other):
+        return self < other or self == other
+    def __ge__(self, other):
+        return self > other or self == other
+    def __ne__(self, other):
+        return not self == other
+        
+
+
+    
 class Target(object):
     """ Prepare a message to be a match target.
     - Break it into a list of words on whitespace and save the originals
