@@ -11,7 +11,7 @@ class TutorialScript(Script):
     def pattern_hello_robot(self):
         return "Hello, carbon-based life form!"
         
-    @pattern("how are you")
+    @pattern("how are you", weight=2)
     def pattern_how_are_you(self):
         return ["I'm great, how are you?",
                 "Doing awesome, you?",
@@ -29,11 +29,7 @@ class TutorialScript(Script):
                 ("Buenas dias!", 25),
                 ("Buongiorno!", 1)]
 
-    @pattern("my name is _*~3")
-    def pattern_my_name_is_star3(self):
-        return "Pleased to meet you, {0}!".format(Script.match[0])
-
-    @pattern("_*~2 told me to say _*")
+    @pattern("_* told me to say _*")
     def pattern_star2_told_me_to_say_star(self):
         return self.choose(
             ['Why would {0} tell you to say "{1}"?',
@@ -68,14 +64,15 @@ class TutorialScript(Script):
 
     @pattern("i am _(so|really|very) excited")
     def pattern_i_am_alt_excited(self):
-        return "What are you {0} excited about?" % Script.match[0]
+        return "What are you {0} excited about?".format(Script.match[0])
 
     @pattern("i _(like|love) the color _*")
     def pattern_i_alt_the_color_star(self):
-        return ["What a coincidence! I %s that color too!" % Script.match[0],
-                "The color %s is one of my favorites" % Script.match[1],
-                "Really? I %s the color %s too!" % (Script.match[0], Script.match[1]),
-                "Oh I %s %s too!" %(Script.match[0], Script.match[1])]
+        return self.choose[
+            "What a coincidence! I {0} that color too!",
+            "The color {1} is one of my favorites"
+            "Really? I {0} the color {1} too!"
+            "Oh I {0} {1} too!"].format(Script.match[0], Script.match[1])
 
     @pattern("how [are] you")
     def pattern_how_opt_you(self):
