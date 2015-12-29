@@ -68,7 +68,7 @@ class Script(object):
         if isinstance(args, list) and args:
             reply = random.choice(args)
             if isinstance(args[0], tuple):
-                args = [(string, min(1, weight)) for string, weight in args]
+                args = [(string, max(1, weight)) for string, weight in args]
                 total = sum([weight for string, weight in args])
                 choice = random.randrange(total)
                 for string, weight in args:
