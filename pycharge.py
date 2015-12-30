@@ -20,22 +20,22 @@ import script
 
 #todo : make the class own the topic database
 #strict: ignore vs throw errors? Probably should throw them
-#todo reload script before loading scripts. Have script loader take a list of
-#filenames?
+#todo reload script.Script before loading scripts. Have script loader take a
+#     list of filenames?
 #todo use imp thread locking
 #should force lowercase be an option?
 #todo, maybe I should call it spycharge...
 
 
 class ChatbotEngine(object):
-    """ Scriptable Python Chatbot Reply Generator
+    """ Python Chatbot Reply Generator
 
     Loads pattern/reply rules, using a simplified regular expression grammar
     for the patterns, and decorated Python methods for the rules. Maintains
     rules, a variable dictionary for the chatbot's internal state plus one
     for each user conversing with the chatbot. Matches user input to its 
     database of patterns to select a reply rule, which may recursively reference
-    other reply rules.
+    other reply patterns and rules.
 
     How script loading works. How multiple instances of Chatbot have to share.
 
@@ -117,20 +117,26 @@ class ChatbotEngine(object):
         self._say("Loading from directory: " + directory)
 
         self.cache_built = False
+        reload(script) #  make Script forget all its subclasses
         for item in os.listdir(directory):
+            self._say("trying " + item)
             if item.lower().endswith(".py"):
                 try:
                     filename = os.path.join(directory, item)
                     self._import(filename, "pycharge_script")
-                except Exception:
+                except Exception as e:
                     tb = "".join(traceback.format_exc())
                     self._say("Failed to load {0}\n{1}\n{2}".format(
-                        filename, tb, str(e), warning="Error"))
+                        filename, tb, str(e)), warning="Error")
 
 
         for script_class in script.Script.__subclasses__():
             self._say("Loading scripts from" + script_class.__name__)
             self._load_script(script_class)
+
+        if sum([len(t.rules) for k, t in self._topics.items()]) == 0:
+            self._say("No rules were found in {0}/*.py".format(directory),
+                      warning="Error")
                 
     def _import(self, filename, prefix):
         """Import a python module, given the filename, but to avoid creating
@@ -178,14 +184,18 @@ class ChatbotEngine(object):
         classname = instance.__class__.__name__
         if self._check_pattern_spec(classname, attribute, argspec):
             raw_pattern, raw_previous, weight = argspec.defaults
-            rule = Rule(raw_pattern, raw_previous, weight, method,
-                           classname + "." +  attribute, say=self._say)
+            try:
+                rule = Rule(raw_pattern, raw_previous, weight, method,
+                            classname + "." +  attribute, say=self._say)
+            except patterns.PatternError as e:
+                self._say(e, warning="Error")
+                return
             tup = (rule.formatted_pattern, rule.formatted_previous)
             if tup in self._topics[topic].rules:
                 existing_rule = self._topics[topic].rules[tup]
                 if method != existing_rule.rule:
-                    self._say('Ignoring pattern "{0}"/"{1}" at {2}.{3} because it '
-                              'is a duplicate of a pattern in {4} for the topic {5},'
+                    self._say('Ignoring pattern "{0}","{1}" at {2}.{3} because it '
+                              'is a duplicate of the pattern of {4} for the topic {5},'
                               'ignoring it.'.format(
                               raw_pattern, raw_previous, classname, attribute,
                               existing_rule.rulename, topic),
@@ -207,7 +217,7 @@ class ChatbotEngine(object):
             argspec.varargs is not None or
             argspec.keywords is not None or
             len(argspec.defaults) != 3):
-            self.say("{0}.{1} wasn't decorated by @pattern"
+            self._say("{0}.{1} wasn't decorated by @pattern "
                      "or it has the wrong number of arguments".format(name, func),
                      warning="Error")
             return False
@@ -321,7 +331,7 @@ class Rule(object):
         try:
             self._pattern_tree = self.__class__._pp.parse(raw_pattern)
         except patterns.PatternError as e:
-            e.args += (" in pattern of {0}." + rulename,)
+            e.args += (" in pattern of {0}.".format(rulename),)
             raise
         if raw_previous != "":
             try:
