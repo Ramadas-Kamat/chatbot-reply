@@ -115,13 +115,16 @@ class ChatbotEngine(object):
         self._say("Loading from directory: " + directory)
 
         self.cache_built = False
+        self._topics = {}
+        self._new_topic("all")
+        self._topics["all"].alternates["colors"] = "(red|green|blue)"
         ScriptRegistrar.clear()
+        
         for item in os.listdir(directory):
-            self._say("trying " + item)
             if item.lower().endswith(".py"):
                 try:
                     filename = os.path.join(directory, item)
-                    self._import(filename, "pycharge_script")
+                    self._import(filename, "_" + directory)
                 except Exception as e:
                     tb = "".join(traceback.format_exc())
                     self._say("Failed to load {0}\n{1}\n{2}".format(
@@ -449,28 +452,3 @@ class Target(object):
 
         """
         return re.sub("[\W]+", "", word, re.UNICODE)
-
-
-
-if __name__ == "__main__":
-    ch = ChatbotEngine(debug=True)
-    ch.load_scripts("scripts")
-    ch.build_cache()
-    while True:
-        msg = raw_input("You> ")
-        if msg == "/quit":
-            break
-        elif msg == "/botvars":
-            print(unicode(ch._botvars))
-        elif msg == "/uservars":
-            if "local" in ch._uservars:
-                print(unicode(ch._uservars["local"]))
-            else:
-                print("No user variables have been defined.")
-        elif msg == "/debug":
-            if ch._botvars["debug"] == "True":
-                ch._botvars["debug"] = "False"
-            else:
-                ch._botvars["debug"] = "True"
-        else:
-            print("Bot> " + ch.reply("local", msg))
