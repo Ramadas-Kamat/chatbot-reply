@@ -5,19 +5,17 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """ Pattern Parsing for pycharge
 """
-
 import re
 
-class PatternError(Exception):
-    pass
-class PatternVariableNotFoundError(Exception):
-    pass
-class StopScanLoop(StopIteration):
-    pass
+from . import PatternError, PatternVariableNotFoundError
+
 # TODO - could pass in a string such as "uba" with variable classes to create
 
+class StopScanLoop(StopIteration):
+    pass
+
 class PatternParser(object):
-    """ Pattern Parser class for Pychbot simplified regular expression patterns."""
+    """ Pattern Parser class for Pycharge simplified regular expression patterns."""
 
     def __init__(self):
         self._every_token = TokenMatcher()

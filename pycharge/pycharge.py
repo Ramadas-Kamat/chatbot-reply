@@ -15,16 +15,14 @@ import os
 import re
 import traceback
 
-import patterns
-import script
+from . import PatternParser, PatternError, PatternVariableNotFoundError
+from . import Script
+from .script import ScriptRegistrar
 
 #todo : make the class own the topic database
-#strict: ignore vs throw errors? Probably should throw them
-#todo reload script.Script before loading scripts. Have script loader take a
-#     list of filenames?
+#strict: making it an option to throw errors instead of ignoring them
 #todo use imp thread locking
 #should force lowercase be an option?
-#todo, maybe I should call it spycharge...
 
 
 class ChatbotEngine(object):
@@ -82,13 +80,13 @@ class ChatbotEngine(object):
         self._topics = {}
         self._new_topic("all")
         self._topics["all"].alternates["colors"] = "(red|green|blue)"
-        self._parser = patterns.PatternParser()
+        self._parser = PatternParser()
         
         self._say("Chatbot instance created.")
 
         # So that the setUp methods of all the user-created Script subclasses
         # can initialize bot variables
-        script.Script.botvars = self._botvars
+        Script.botvars = self._botvars
 
     def _say(self, message, warning=""):
         """Print all warnings to the error log, and debug messages to the
@@ -117,7 +115,7 @@ class ChatbotEngine(object):
         self._say("Loading from directory: " + directory)
 
         self.cache_built = False
-        reload(script) #  make Script forget all its subclasses
+        ScriptRegistrar.clear()
         for item in os.listdir(directory):
             self._say("trying " + item)
             if item.lower().endswith(".py"):
@@ -130,9 +128,9 @@ class ChatbotEngine(object):
                         filename, tb, str(e)), warning="Error")
 
 
-        for script_class in script.Script.__subclasses__():
-            self._say("Loading scripts from" + script_class.__name__)
-            self._load_script(script_class)
+        for cls in ScriptRegistrar.registry:
+            self._say("Loading scripts from" + cls.__name__)
+            self._load_script(cls)
 
         if sum([len(t.rules) for k, t in self._topics.items()]) == 0:
             self._say("No rules were found in {0}/*.py".format(directory),
@@ -154,7 +152,7 @@ class ChatbotEngine(object):
         return mod
 
     def _load_script(self, script_class):
-        """Given a subclass of script.Script, create an instance of it, then
+        """Given a subclass of Script, create an instance of it, then
         find all of its methods which begin with one of our keywords
         and add them to the topic database
 
@@ -181,24 +179,25 @@ class ChatbotEngine(object):
     def _load_pattern(self, topic, instance, attribute):
         method = getattr(instance, attribute)
         argspec = inspect.getargspec(method)
-        classname = instance.__class__.__name__
-        if self._check_pattern_spec(classname, attribute, argspec):
+        rulename = (instance.__module__ + "." +
+                    instance.__class__.__name__ + "." + attribute)
+        if self._check_pattern_spec(rulename, argspec):
             raw_pattern, raw_previous, weight = argspec.defaults
             try:
                 rule = Rule(raw_pattern, raw_previous, weight, method,
-                            classname + "." +  attribute, say=self._say)
-            except patterns.PatternError as e:
+                            rulename, say=self._say)
+            except PatternError as e:
                 self._say(e, warning="Error")
                 return
             tup = (rule.formatted_pattern, rule.formatted_previous)
             if tup in self._topics[topic].rules:
                 existing_rule = self._topics[topic].rules[tup]
                 if method != existing_rule.rule:
-                    self._say('Ignoring pattern "{0}","{1}" at {2}.{3} because it '
-                              'is a duplicate of the pattern of {4} for the topic {5},'
-                              'ignoring it.'.format(
-                              raw_pattern, raw_previous, classname, attribute,
-                              existing_rule.rulename, topic),
+                    self._say('Ignoring pattern "{0}","{1}" at {2} because it '
+                              'is a duplicate of the pattern of {3} '
+                              'for the topic "{4}"'.format(
+                                  raw_pattern, raw_previous, rulename,
+                                  existing_rule.rulename, topic),
                               warning = "Warning")
             else:
                 self._topics[topic].rules[tup] = rule
@@ -206,7 +205,7 @@ class ChatbotEngine(object):
                           'method = {3}'.format(raw_pattern, raw_previous,
                                                 weight, attribute))
 
-    def _check_pattern_spec(self, name, func, argspec):
+    def _check_pattern_spec(self, name, argspec):
         """ Check that the passed argument spec matches what we expect the
         @pattern decorator in scripts.py to do. Prints an error
         message and returns false if a problem is found, otherwise
@@ -217,8 +216,8 @@ class ChatbotEngine(object):
             argspec.varargs is not None or
             argspec.keywords is not None or
             len(argspec.defaults) != 3):
-            self._say("{0}.{1} wasn't decorated by @pattern "
-                     "or it has the wrong number of arguments".format(name, func),
+            self._say("{0} wasn't decorated by @pattern "
+                     "or it has the wrong number of arguments".format(name),
                      warning="Error")
             return False
         return True
@@ -255,7 +254,7 @@ class ChatbotEngine(object):
             if m is not None:
                 self._say("Found pattern match, rule {0}".format(
                     rule.rulename))
-                script.Script.match = self._match_dict(m.groupdict())
+                Script.match = self._match_dict(m.groupdict())
                 try:
                     reply = rule.rule()
                 except Exception, e:
@@ -281,7 +280,7 @@ class ChatbotEngine(object):
                       "returning to 'all'".format(str(user), topic))
             topic = uservars["__topic__"] = "all"
 
-        script.Script.set_user(user, uservars)
+        Script.set_user(user, uservars)
 
     def _set_topic(self, user, topic):
         self._uservars[user]["__topic__"] = topic
@@ -302,7 +301,7 @@ class Topic(object):
 class Rule(object):
     """ Pattern matching and response rule.
 
-    Describes one method decorated by @script.pattern. Parses
+    Describes one method decorated by @pattern (see script.py). Parses
     the simplified regular expression strings, raising an exception
     if there is an error. Can match the pattern and previous_pattern
     against tokenized input (a Target) and return a Match object.
@@ -311,7 +310,7 @@ class Rule(object):
     formatted_pattern - the pattern reformatted by the parser for
                         more accurate comparisons
     formatted_previous - the previous_pattern, reformatted by the parser
-    weight             - the weight, given to @script.pattern
+    weight             - the weight, given to @pattern
     rule               - a reference to the decorated method
     rulename           - classname.methodname, for error messages
     score              - a calculated score based on the amount of 
@@ -323,20 +322,20 @@ class Rule(object):
     full set of comparison operators - to enable sorting first by weight then 
             score
     """
-    _pp = patterns.PatternParser()
+    _pp = PatternParser()
     
     def __init__(self, raw_pattern, raw_previous, weight, rule, rulename,
                  say=lambda s: None):
         self._say = say
         try:
             self._pattern_tree = self.__class__._pp.parse(raw_pattern)
-        except patterns.PatternError as e:
+        except PatternError as e:
             e.args += (" in pattern of {0}.".format(rulename),)
             raise
         if raw_previous != "":
             try:
                 self._previous_tree = self.__class__._pp.parse(raw_previous)
-            except patterns.PatternError as e:
+            except PatternError as e:
                 e.args += (" in previous pattern of {0}.".format(rulename),)
                 raise
         else:
@@ -362,7 +361,7 @@ class Rule(object):
             self.regexc = re.compile(
                 self.__class__._pp.regex(self._pattern_tree, alternates) + "$",
                 re.UNICODE)
-        except patterns.PatternVariableNotFoundError:
+        except PatternVariableNotFoundError:
             self._say("[Rule] Failed to cache regex for {0}.".format(
                 self.formatted_pattern))
             return None

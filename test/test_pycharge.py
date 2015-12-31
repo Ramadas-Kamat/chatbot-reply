@@ -15,6 +15,7 @@ import unittest
 from mock import Mock
 
 import pycharge
+from pycharge.pycharge import Target
 
 class RuleTestCase(unittest.TestCase):
     def test_Rule_Correctly_ComparesByWeightAndScore(self):
@@ -33,7 +34,7 @@ class TargetTestCase(unittest.TestCase):
         problems = [r"ABC_abc 123 !@#$%^&**()-=+|}{[]\~~`';:/.,<>?", "",
                     "Apples, oranges and bananas!", "This one isn't as hard"]
         for p in problems:
-            t = pycharge.Target(p)
+            t = Target(p)
             self.assertEqual(t.orig_text, p)
             self.assertEqual(len(t.orig_words), len(t.tokenized_words))
             for wl in t.tokenized_words:
@@ -42,11 +43,11 @@ class TargetTestCase(unittest.TestCase):
             
 class ChatbotEngineTestCase(unittest.TestCase):
     def setUp(self):
-        self.debugLogger = Mock() #side_effect=print)
-        self.errorLogger = Mock() #side_effect=print)
-        self.ch = pycharge.ChatbotEngine(debug=False,
-                                         debuglogger=self.debugLogger,
-                                         errorlogger=self.errorLogger)
+        self.debuglogger = Mock()
+        self.errorlogger = Mock()
+        self.ch = pycharge.ChatbotEngine(debug=True,
+                                         debuglogger=self.debuglogger,
+                                         errorlogger=self.errorlogger)
         self.scripts_dir = tempfile.mkdtemp()
 
     def tearDown(self):
@@ -56,32 +57,32 @@ class ChatbotEngineTestCase(unittest.TestCase):
 
     def test_Load_Error_OnInvalidDirectory(self):
         self.ch.load_scripts(os.path.join(self.scripts_dir, "not_there"))
-        self.assertEqual(self.errorLogger.call_count, 1)
+        self.assertEqual(self.errorlogger.call_count, 1)
 
     def test_Load_Error_OnNoFiles(self):
         self.ch.load_scripts(self.scripts_dir)
-        self.assertEqual(self.errorLogger.call_count, 1)        
+        self.assertEqual(self.errorlogger.call_count, 1)        
 
     def test_Load_Error_OnBrokenScript(self):
         self.write_py("if True\n\tprint 'syntax error'\n")
         self.ch.load_scripts(self.scripts_dir)
         # 1 error for failure to load module, one for no scripts found
-        self.assertEqual(self.errorLogger.call_count, 2)
+        self.assertEqual(self.errorlogger.call_count, 2)
 
     def test_Load_Error_On_NoRules(self):
         py = """
-from script import Script
+from pycharge import Script
 class TestScript(Script):
     pass
 """
         self.write_py(py)
         self.ch.load_scripts(self.scripts_dir)
-        self.assertEqual(self.errorLogger.call_count, 1)
+        self.assertEqual(self.errorlogger.call_count, 1)
         pass
 
     def test_Load_Error_On_DuplicateRules(self):
         py = """
-from script import Script, pattern
+from pycharge import Script, pattern
 class TestScript(Script):
     @pattern("hello")
     def pattern_foo(self):
@@ -90,11 +91,11 @@ class TestScript(Script):
         self.write_py(py, filename="foo.py")
         self.write_py(py, filename="bar.py")
         self.ch.load_scripts(self.scripts_dir)
-        self.assertEqual(self.errorLogger.call_count, 1)
+        self.assertEqual(self.errorlogger.call_count, 1)
         
     def test_Load_Error_On_PatternParsingError(self):
         py = """
-from script import Script, pattern
+from pycharge import Script, pattern
 class TestScript(Script):
     @pattern("(_)")
     def pattern_foo(self):
@@ -102,22 +103,22 @@ class TestScript(Script):
 """
         self.write_py(py)
         self.ch.load_scripts(self.scripts_dir)
-        self.assertEqual(self.errorLogger.call_count, 2)
+        self.assertEqual(self.errorlogger.call_count, 2)
         
     def test_Load_Error_On_UndecoratedPattern(self):
         py = """
-from script import Script, pattern
+from pycharge import Script, pattern
 class TestScript(Script):
     def pattern_foo(self):
         pass
 """
         self.write_py(py)
         self.ch.load_scripts(self.scripts_dir)
-        self.assertEqual(self.errorLogger.call_count, 2)
+        self.assertEqual(self.errorlogger.call_count, 2)
 
     def test_Reply_Error_OnRuntimeErrorInRule(self):
         py = """
-from script import Script, pattern
+from pycharge import Script, pattern
 class TestScript(Script):
     @pattern("*")
     def pattern_foo(self):
@@ -126,11 +127,11 @@ class TestScript(Script):
         self.write_py(py)
         self.ch.load_scripts(self.scripts_dir)
         self.ch.reply("local", "test")
-        self.assertEqual(self.errorLogger.call_count, 1)
+        self.assertEqual(self.errorlogger.call_count, 1)
         
     def test_Reply_Chooses_HigherScoringRule(self):
         py = """
-from script import Script, pattern
+from pycharge import Script, pattern
 class TestScript(Script):
     @pattern("hello *")
     def pattern_test1(self):
@@ -159,6 +160,7 @@ class TestScript(Script):
 """
         self.write_py(py)
         self.ch.load_scripts(self.scripts_dir)
+        self.assertFalse(self.errorlogger.called)
         # this would have a 1 in 8 chance of working anyway due to the
         # lack of hash order, but I tried commenting out sorted() and it
         # triggered the assert.

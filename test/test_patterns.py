@@ -7,7 +7,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """ Unit tests for Python Chatbot Reply Generator's Pattern Parser """
 
-import patterns
+import pycharge
 
 import re
 import sys
@@ -16,7 +16,7 @@ import unittest
 
 class PatternParserTestCase(unittest.TestCase):
     def setUp(self):
-        self.pp = patterns.PatternParser()
+        self.pp = pycharge.PatternParser()
 
     def tearDown(self):
         pass
@@ -33,13 +33,13 @@ class PatternParserTestCase(unittest.TestCase):
                     "|", "a|b", "a | b", "(a|)", "[|]", "(foo)(bar)" ]
 
         for p in problems:
-            self.my_assertRaises(patterns.PatternError, self.pp.parse, p)
+            self.my_assertRaises(pycharge.PatternError, self.pp.parse, p)
 
     def test_PP_RaisesExceptions_On_InvalidInput_in_SimpleMode(self):
         problems = ["*", "u%foo", "_(hello|goodbye)", "[help]"]
 
         for p in problems:
-            self.my_assertRaises(patterns.PatternError,
+            self.my_assertRaises(pycharge.PatternError,
                                  lambda x:self.pp.parse(x, simple=True), p)
 
     def my_assertRaises(self, error, func, arg):

@@ -36,7 +36,21 @@ def substitutions(subs, person=False):
         return func_wrapper
     return substitutions_decorator
 
+class ScriptRegistrar(type):
+    registry = []
+    def __new__(cls, name, bases, attributes):
+        new_cls = type.__new__(cls, name, bases, attributes)
+        if new_cls.__module__ != cls.__module__:
+            cls.registry.append(new_cls)
+        return new_cls
+
+    @classmethod
+    def clear(cls):
+        cls.registry = []
+
 class Script(object):
+    __metaclass__ = ScriptRegistrar
+    
     topic = "all"
     
     botvars = None
