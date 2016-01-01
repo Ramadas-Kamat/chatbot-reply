@@ -1,13 +1,10 @@
-#! /usr/bin/env python
-# Copyright (c) 2016 Gemini Lasswell
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#Any copyright is dedicated to the Public Domain.
+#http://creativecommons.org/publicdomain/zero/1.0/
 
 from pycharge import Script, pattern
 
 class HokeyPokeyScript(Script):
-    def setUp(self):
+    def __init__(self):
         Script.botvars["mood"] = "good"
         Script.botvars["bodypart"] = "right foot"
         Script.botvars["danced"] = False
@@ -84,7 +81,7 @@ class HokeyPokeyScript(Script):
         Script.botvars["bodypart"] = self.next_body_part(bodypart)
         return "<put your {0} in>".format(bodypart)
     
-    @pattern("have you done the hokey pokey")
+    @pattern("(have you done|did you do) the hokey pokey")
     def pattern_have_you_done_the_hokey_pokey(self):
         if Script.botvars["danced"]:
             return "Yes!"
