@@ -3,7 +3,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-""" Pattern Parsing for pycharge
+""" Pattern Parsing for chatbot_reply
 """
 import re
 
@@ -39,8 +39,8 @@ class PatternParser(object):
             (r"(%u:)([^_\d\W][\w]*)", E, PatternParser.Variable(), True),
             (r"(%b:)([^_\d\W][\w]*)", E, PatternParser.Variable(), True),
             (r"(%a:)([^_\d\W][\w]*)", E, PatternParser.Variable(), True),
-            (r"(\[)", EV, PatternParser.Optional(), False),
-            (r"(\])([])|\s]|$)", EV, PatternParser.Terminator(), True),
+            (r"(\[)", EVA, PatternParser.Optional(), False),
+            (r"(\])([])|\s]|$)", EVA, PatternParser.Terminator(), True),
             (r"(\()", EVA, PatternParser.Group(), False),
             (r"(\))([])|\s]|$)", EVA, PatternParser.Terminator(), True),
             (r"(\|)", EVA, PatternParser.Pipe(), False),
@@ -284,7 +284,9 @@ class PatternParser(object):
 
         def regex(self, outerself, code, data, named_groups, variables):
             if data[0] not in variables or data[1] not in variables[data[0]]:
-                raise PatternVariableNotFoundError
+                raise PatternVariableNotFoundError(
+                    "Chatbot variable %{0}:{1} not found".format(data[0],
+                                                                 data[1]))
             # The user script could have put anything at all in here. Coerce it
             # into something safe to put into a regular expression. Try parsing
             # it, and if that fails, coerce it to a string, and if that fails

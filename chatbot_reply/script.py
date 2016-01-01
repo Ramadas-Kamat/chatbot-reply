@@ -3,9 +3,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-""" pycharge.script module, defines decorators and superclass for 
-pycharge scripts 
-
+""" chatbot_reply.script, defines decorators and superclass for chatbot scripts 
 """
 #todo - Script needs a method that does string.format using the match variables
 from functools import wraps
@@ -52,7 +50,6 @@ class Script(object):
     __metaclass__ = ScriptRegistrar
     
     topic = "all"
-    
     botvars = None
     uservars = None
     user_id = None

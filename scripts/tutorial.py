@@ -1,7 +1,7 @@
 #Any copyright is dedicated to the Public Domain.
 #http://creativecommons.org/publicdomain/zero/1.0/
 
-from pycharge import Script, pattern, alternates
+from chatbot_reply import Script, pattern
 
 class TutorialScript(Script):
     def __init__(self):
@@ -99,14 +99,6 @@ class TutorialScript(Script):
     def pattern_my_star_is_arrcolors(self):
         return "I've always wanted a {1} {0}".format(Script.match[0],
                                                      Script.match[1])
-
-    @alternates("blues")
-    def alternates_blues(self):
-        return ["light blue", "dark blue", "medium blue"]
-
-    @alternates("colors")
-    def alternates_colors(self):
-        return ["red", "blue", "green"]
 
     @pattern("google _*", weight=10)
     def pattern_google_star(self):

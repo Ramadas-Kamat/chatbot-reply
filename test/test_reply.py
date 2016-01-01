@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-"""Python Chatbot Reply Generator Unit tests
+"""Chatbot Reply Generator Unit tests
 
 """
 from __future__ import print_function
@@ -14,8 +14,10 @@ import unittest
 
 from mock import Mock
 
-import pycharge
-from pycharge.pycharge import Target
+from chatbot_reply import ChatbotEngine
+from chatbot_reply import NoRulesFoundError
+from chatbot_reply import PatternError, PatternMethodSpecError
+from chatbot_reply.reply import Target
 
 class RuleTestCase(unittest.TestCase):
     def test_Rule_Correctly_ComparesByWeightAndScore(self):
@@ -45,9 +47,8 @@ class ChatbotEngineTestCase(unittest.TestCase):
     def setUp(self):
         self.debuglogger = Mock()
         self.errorlogger = Mock()
-        self.ch = pycharge.ChatbotEngine(debug=True,
-                                         debuglogger=self.debuglogger,
-                                         errorlogger=self.errorlogger)
+        self.ch = ChatbotEngine(debug=True, debuglogger=self.debuglogger,
+                                errorlogger=self.errorlogger)
         self.scripts_dir = tempfile.mkdtemp()
 
     def tearDown(self):
@@ -55,34 +56,35 @@ class ChatbotEngineTestCase(unittest.TestCase):
             os.remove(os.path.join(self.scripts_dir, item))
         os.rmdir(self.scripts_dir)
 
-    def test_Load_Error_OnInvalidDirectory(self):
-        self.ch.load_scripts(os.path.join(self.scripts_dir, "not_there"))
-        self.assertEqual(self.errorlogger.call_count, 1)
+    def test_Load_RaisesOSError_OnInvalidDirectory(self):
+        self.assertRaises(OSError,
+                          self.ch.load_script_directory,
+                          os.path.join(self.scripts_dir, "not_there"))
 
-    def test_Load_Error_OnNoFiles(self):
-        self.ch.load_scripts(self.scripts_dir)
-        self.assertEqual(self.errorlogger.call_count, 1)        
+    def test_Load_RaisesNoRulesFoundError_OnNoFiles(self):
+        self.assertRaises(NoRulesFoundError,
+                          self.ch.load_script_directory,
+                          self.scripts_dir)
 
-    def test_Load_Error_OnBrokenScript(self):
+    def test_Load_RaisesSyntaxError_OnBrokenScript(self):
         self.write_py("if True\n\tprint 'syntax error'\n")
-        self.ch.load_scripts(self.scripts_dir)
-        # 1 error for failure to load module, one for no scripts found
-        self.assertEqual(self.errorlogger.call_count, 2)
+        self.assertRaises(SyntaxError,
+                          self.ch.load_script_directory,
+                          self.scripts_dir)
 
-    def test_Load_Error_On_NoRules(self):
+    def test_Load_RaisesNoRulesFoundError_On_NoRules(self):
         py = """
-from pycharge import Script
+from chatbot_reply import Script
 class TestScript(Script):
     pass
 """
         self.write_py(py)
-        self.ch.load_scripts(self.scripts_dir)
-        self.assertEqual(self.errorlogger.call_count, 1)
-        pass
+        self.assertRaises(NoRulesFoundError, self.ch.load_script_directory,
+                          self.scripts_dir)
 
-    def test_Load_Error_On_DuplicateRules(self):
+    def test_Load_Warning_On_DuplicateRules(self):
         py = """
-from pycharge import Script, pattern
+from chatbot_reply import Script, pattern
 class TestScript(Script):
     @pattern("hello")
     def pattern_foo(self):
@@ -90,48 +92,49 @@ class TestScript(Script):
 """
         self.write_py(py, filename="foo.py")
         self.write_py(py, filename="bar.py")
-        self.ch.load_scripts(self.scripts_dir)
+        self.ch.load_script_directory(self.scripts_dir)
         self.assertEqual(self.errorlogger.call_count, 1)
         
-    def test_Load_Error_On_PatternParsingError(self):
+    def test_Load_RaisesPatternError_On_MalformedPattern(self):
         py = """
-from pycharge import Script, pattern
+from chatbot_reply import Script, pattern
 class TestScript(Script):
     @pattern("(_)")
     def pattern_foo(self):
         pass
 """
         self.write_py(py)
-        self.ch.load_scripts(self.scripts_dir)
-        self.assertEqual(self.errorlogger.call_count, 2)
+        self.assertRaises(PatternError,
+                          self.ch.load_script_directory,
+                          self.scripts_dir)
         
-    def test_Load_Error_On_UndecoratedPattern(self):
+    def test_Load_RaisesPatternMethodSpecError_On_UndecoratedMethod(self):
         py = """
-from pycharge import Script, pattern
+from chatbot_reply import Script, pattern
 class TestScript(Script):
     def pattern_foo(self):
         pass
 """
         self.write_py(py)
-        self.ch.load_scripts(self.scripts_dir)
-        self.assertEqual(self.errorlogger.call_count, 2)
+        self.assertRaises(PatternMethodSpecError,
+                          self.ch.load_script_directory,
+                          self.scripts_dir)
 
     def test_Reply_Error_OnRuntimeErrorInRule(self):
         py = """
-from pycharge import Script, pattern
+from chatbot_reply import Script, pattern
 class TestScript(Script):
     @pattern("*")
     def pattern_foo(self):
         x = y
 """
         self.write_py(py)
-        self.ch.load_scripts(self.scripts_dir)
-        self.ch.reply("local", "test")
-        self.assertEqual(self.errorlogger.call_count, 1)
+        self.ch.load_script_directory(self.scripts_dir)
+        self.assertRaises(NameError, self.ch.reply, "local", "test")
         
     def test_Reply_Chooses_HigherScoringRule(self):
         py = """
-from pycharge import Script, pattern
+from chatbot_reply import Script, pattern
 class TestScript(Script):
     @pattern("hello *")
     def pattern_test1(self):
@@ -159,12 +162,21 @@ class TestScript(Script):
         return "fail"
 """
         self.write_py(py)
-        self.ch.load_scripts(self.scripts_dir)
-        self.assertFalse(self.errorlogger.called)
+        self.ch.load_script_directory(self.scripts_dir)
         # this would have a 1 in 8 chance of working anyway due to the
         # lack of hash order, but I tried commenting out sorted() and it
         # triggered the assert.
+        # could programatically write 10000 methods with wildcards...
         self.assertEqual(self.ch.reply("local", "hello world"), "pass")
+
+    def test_LoadClearLoad_WorksWithoutComplaint(self):
+        pass
+
+    def test_Load_RaisesPatternError_OnMalformedAlternates(self):
+        pass
+
+    def test_Load_RaisesNoRulesFoundError_OnTopicNone(self):
+        pass
 
     def test_Reply_Passes_MatchedText(self):
         # wait to implement Match object, this is going to change
@@ -179,7 +191,6 @@ class TestScript(Script):
         filename = os.path.join(self.scripts_dir, filename)
         with open(filename, "wb") as f:
             f.write(py + "\n")
-            
 
 if __name__ == "__main__":
     unittest.main()

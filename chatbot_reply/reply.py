@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-"""Python Chatbot Reply Generator - PyChaRGe
+"""Chatbot Reply Generator
 
 """
 
@@ -15,14 +15,20 @@ import os
 import re
 import traceback
 
-from . import PatternParser, PatternError, PatternVariableNotFoundError
-from . import Script
-from .script import ScriptRegistrar
+from .patterns import PatternParser
+from .exceptions import PatternError, PatternVariableNotFoundError
+from .exceptions import PatternMethodSpecError, RecursionTooDeepError
+from .exceptions import NoRulesFoundError
+from .script import Script, ScriptRegistrar
 
-#todo : make the class own the topic database
 #strict: making it an option to throw errors instead of ignoring them
-#todo use imp thread locking
+#todo use imp thread locking, though this thing is totally not thread-safe
 #should force lowercase be an option?
+# load_directory or load_script_directory, all the loading code needs work
+# the topic database should be its own class
+# weights for previous
+# match0 and botmatch0
+# recursion
 
 
 class ChatbotEngine(object):
@@ -58,35 +64,34 @@ class ChatbotEngine(object):
                   but available to scripts interacting with all users of the bot
     """
 
-    def __init__(self, debug=False, depth=50,
-                 debuglogger=lambda s:print(s), errorlogger=lambda s:print(s)):
+    def __init__(self, debug=False, depth=50, debuglogger=print,
+                 errorlogger=print):
         """Initialize a new ChatbotEngine.
 
         Keyword arguments: 
         debug -- True or False depending on how much logging you want to see.  
         depth -- Recursion depth limit for replies that reference other replies 
-        debuglogger and errorlogger -- functions which will be passed a single string
-                  with debugging or error output respectively. The default is to
-                  use print but you can set them to None to silence output.
+        debuglogger and errorlogger -- functions which will be passed a single 
+                  string with debugging or warning message output respectively. 
+                  The default is to use print but you can set them to None to 
+                  silence output.
 
         """
         self._debuglogger = debuglogger
         self._errorlogger = errorlogger
-        
         self._depth_limit = depth
-        self._botvars = {"debug":str(debug)}
+        self._botvars = {"debug":unicode(debug)}
+        
+        self._PREFIX = "________" # added to script module names to avoid 
+                                  # namespace conflicts
+
         self._uservars = {}
         self._substitutions = {}
-        self._topics = {}
-        self._new_topic("all")
-        self._topics["all"].alternates["colors"] = "(red|green|blue)"
+        self.clear_rules()
         self._parser = PatternParser()
         
         self._say("Chatbot instance created.")
 
-        # So that the setUp methods of all the user-created Script subclasses
-        # can initialize bot variables
-        Script.botvars = self._botvars
 
     def _say(self, message, warning=""):
         """Print all warnings to the error log, and debug messages to the
@@ -102,54 +107,42 @@ class ChatbotEngine(object):
 
     ##### Reading scripts and building the database of rules #####
     
-    def load_scripts(self, directory):
+    def load_script_directory(self, directory):
         """Iterate through the .py files in a directory, and import all of
         them. Then look for subclasses of Script and search them for
         rules, and load those into self._topics.
 
         """
-        if not os.path.isdir(directory):
-            self._say("{0} is not a directory".format(directory),
-                      warning="Error")
-            return
-        self._say("Loading from directory: " + directory)
-
         self.cache_built = False
-        self._topics = {}
-        self._new_topic("all")
-        self._topics["all"].alternates["colors"] = "(red|green|blue)"
         ScriptRegistrar.clear()
         
         for item in os.listdir(directory):
             if item.lower().endswith(".py"):
-                try:
-                    filename = os.path.join(directory, item)
-                    self._import(filename, "_" + directory)
-                except Exception as e:
-                    tb = "".join(traceback.format_exc())
-                    self._say("Failed to load {0}\n{1}\n{2}".format(
-                        filename, tb, str(e)), warning="Error")
+                filename = os.path.join(directory, item)
+                self._import(filename)
 
+
+        Script.botvars = self._botvars
 
         for cls in ScriptRegistrar.registry:
             self._say("Loading scripts from" + cls.__name__)
             self._load_script(cls)
 
         if sum([len(t.rules) for k, t in self._topics.items()]) == 0:
-            self._say("No rules were found in {0}/*.py".format(directory),
-                      warning="Error")
+            raise NoRulesFoundError(
+                "No rules were found in {0}/*.py".format(directory))
                 
-    def _import(self, filename, prefix):
+    def _import(self, filename):
         """Import a python module, given the filename, but to avoid creating
         namespace conflicts give the module a name consisting of
-        prefix_filename (minus any extension).
+        _PREFIX + filename (minus any extension).
 
         """
         path, name = os.path.split(filename)
         name, ext = os.path.splitext(name)
 
         self._say("Reading " + filename)
-        modname = "%s_%s" % (prefix, name)
+        modname = self._PREFIX + name
         file, filename, data = imp.find_module(name, [path])
         mod = imp.load_module(modname, file, filename, data)
         return mod
@@ -161,44 +154,57 @@ class ChatbotEngine(object):
 
         """
         dispatch = [("pattern", self._load_pattern),
-                    ("alternate", self._load_alternate),
                     ("substitute", self._load_substitute)]
 
-        topic = script_class.topic
+        instance = script_class()
+        script_class_name = (instance.__module__[len(self._PREFIX):] + "." +
+                             instance.__class__.__name__)
+        
+        topic = instance.topic
+        if topic == None: #this is the way to define a script superclass
+            return
         if topic not in self._topics:
             self._new_topic(topic)
 
-        instance = script_class()
-        instance.setUp()
+        alternates = {}
+        if hasattr(instance, "alternates"):
+            try:
+                alternates = Rule.validate_alternates(instance.alternates,
+                                                      script_class_name)
+            except PatternError as e:
+                e.args += (" in self.alternates of " + script_class_name,)
+                raise
+        
         for attribute in dir(instance):
             for name, func in dispatch:
                 if (attribute.startswith(name) and
                     hasattr(getattr(instance, attribute), '__call__')):
-                    func(topic, instance, attribute)
+                    func(topic, script_class_name, instance, attribute, alternates)
 
+    def clear_rules(self):
+        self._topics = {}
+        self._new_topic("all")
+        
     def _new_topic(self, topic):
         self._topics[topic] = Topic()
     
-    def _load_pattern(self, topic, instance, attribute):
+    def _load_pattern(self, topic, script_class_name, instance, attribute,
+                      alternates):
         method = getattr(instance, attribute)
         argspec = inspect.getargspec(method)
-        rulename = (instance.__module__ + "." +
-                    instance.__class__.__name__ + "." + attribute)
+        rulename = script_class_name + "." + attribute
+
         if self._check_pattern_spec(rulename, argspec):
             raw_pattern, raw_previous, weight = argspec.defaults
-            try:
-                rule = Rule(raw_pattern, raw_previous, weight, method,
-                            rulename, say=self._say)
-            except PatternError as e:
-                self._say(e, warning="Error")
-                return
+            rule = Rule(raw_pattern, raw_previous, weight, alternates,
+                            method, rulename, say=self._say)
             tup = (rule.formatted_pattern, rule.formatted_previous)
             if tup in self._topics[topic].rules:
                 existing_rule = self._topics[topic].rules[tup]
                 if method != existing_rule.rule:
                     self._say('Ignoring pattern "{0}","{1}" at {2} because it '
                               'is a duplicate of the pattern of {3} '
-                              'for the topic "{4}"'.format(
+                              'for the topic "{4}".'.format(
                                   raw_pattern, raw_previous, rulename,
                                   existing_rule.rulename, topic),
                               warning = "Warning")
@@ -219,36 +225,37 @@ class ChatbotEngine(object):
             argspec.varargs is not None or
             argspec.keywords is not None or
             len(argspec.defaults) != 3):
-            self._say("{0} wasn't decorated by @pattern "
-                     "or it has the wrong number of arguments".format(name),
-                     warning="Error")
-            return False
+            raise PatternMethodSpecError("{0} was not decorated by @pattern "
+                     "or it has the wrong number of arguments".format(name))
         return True
 
     
-    def _load_alternate(self, topic, script_class, attribute):
-        pass
-
     def _load_substitute(self, topic, script_class, attribute):
         pass
 
     def build_cache(self):
         if self.cache_built:
             return
-        for topic_name, topic in self._topics.items():
-            topic.sortedrules = sorted(
-                [rule for key, rule
-                 in topic.rules.items()], reverse=True)
-            d = {"a" : topic.alternates}
-            for rule in topic.sortedrules:
-                rule.cache_regexes(d)
+        for n, t in self._topics.items():
+            t.sortedrules = sorted([rule for key, rule in t.rules.items()],
+                                   reverse=True)
+            for rule in t.sortedrules:
+                rule.cache_regexes()
         self.cache_built = True
 
     
     def reply(self, user, message, depth=0):
-        self._say('Asked to reply to: "{0}" from {1}'.format(message, str(user)))
-        self._set_user(user)
-        self.build_cache()
+        if depth == 0:
+            self.build_cache()
+            self._say('Asked to reply to: "{0}" from {1}'.format(message,
+                                                                 unicode(user)))
+            self._set_user(user)
+            Script.botvars = self._botvars
+        elif depth < self._depth_limit:
+            self._say('Recursing to find reply to "{0}", depth == {1}'.format(
+                message, depth))
+        else:
+            raise RecursionTooDeepError
         
         target = Target(message, say=self._say)
         reply = ""
@@ -258,19 +265,11 @@ class ChatbotEngine(object):
                 self._say("Found pattern match, rule {0}".format(
                     rule.rulename))
                 Script.match = self._match_dict(m.groupdict())
-                try:
-                    reply = rule.rule()
-                except Exception, e:
-                    tb = "".join(traceback.format_exc())
-                    self._say("Rule {0} failed:\n{1}\n{2}".format(rule.rulename,
-                                                                  str(e), tb),
-                              warning="Error")
-                    continue
+                reply = rule.rule()
                 break
         if not reply:
             self._say("Empty reply generated")
-
-        return str(reply)
+        return unicode(reply)
 
     def _set_user(self, user):
         if user not in self._uservars:
@@ -280,7 +279,7 @@ class ChatbotEngine(object):
         topic = uservars["__topic__"]
         if topic not in self._topics:
             self._say("User {0} is in empty topic {1}, "
-                      "returning to 'all'".format(str(user), topic))
+                      "returning to 'all'".format(unicode(user), topic))
             topic = uservars["__topic__"] = "all"
 
         Script.set_user(user, uservars)
@@ -299,7 +298,6 @@ class Topic(object):
     def __init__(self):
         self.rules = {}
         self.sortedrules = []
-        self.alternates = {}
     
 class Rule(object):
     """ Pattern matching and response rule.
@@ -314,6 +312,7 @@ class Rule(object):
                         more accurate comparisons
     formatted_previous - the previous_pattern, reformatted by the parser
     weight             - the weight, given to @pattern
+    alternates         - a dictionary 
     rule               - a reference to the decorated method
     rulename           - classname.methodname, for error messages
     score              - a calculated score based on the amount of 
@@ -327,8 +326,8 @@ class Rule(object):
     """
     _pp = PatternParser()
     
-    def __init__(self, raw_pattern, raw_previous, weight, rule, rulename,
-                 say=lambda s: None):
+    def __init__(self, raw_pattern, raw_previous, weight, alternates,
+                 rule, rulename, say=lambda s: None):
         self._say = say
         try:
             self._pattern_tree = self.__class__._pp.parse(raw_pattern)
@@ -345,6 +344,7 @@ class Rule(object):
             self._previous_tree = None    
         
         self.weight = weight
+        self.alternates = alternates
         self.rule = rule
         self.rulename = rulename
         self.formatted_pattern = self.__class__._pp.format(self._pattern_tree)
@@ -355,9 +355,11 @@ class Rule(object):
         self.pattern_regexc = None
         self.previous_regexc = None
 
-    def cache_regexes(self, alternates):
-        self.pattern_regexc = self._get_regexc(self._pattern_tree, alternates)
-        self.previous_regexc = self._get_regexc(self._previous_tree, alternates)
+    def cache_regexes(self):
+        self.pattern_regexc = self._get_regexc(self._pattern_tree,
+                                               self.alternates)
+        self.previous_regexc = self._get_regexc(self._previous_tree,
+                                                self.alternates)
         
     def _get_regexc(self, parsetree, alternates):
         try:
@@ -383,8 +385,18 @@ class Rule(object):
         return self > other or self == other
     def __ne__(self, other):
         return not self == other
-        
 
+    @classmethod
+    def validate_alternates(cls, alternates, script_class_name):
+        valid = {}
+        for k, v in alternates.items():
+            try:
+                valid[k] = cls._pp.format(cls._pp.parse(v, simple=True))
+            except PatternError as e:
+                e.args += (' in alternates["{0}"] '
+                           'of {1}.'.format(k, script_class_name),)
+                raise
+        return {"a":valid}
 
     
 class Target(object):

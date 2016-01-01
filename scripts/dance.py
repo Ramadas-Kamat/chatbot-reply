@@ -1,7 +1,7 @@
 #Any copyright is dedicated to the Public Domain.
 #http://creativecommons.org/publicdomain/zero/1.0/
 
-from pycharge import Script, pattern
+from chatbot_reply import Script, pattern
 
 class HokeyPokeyScript(Script):
     def __init__(self):

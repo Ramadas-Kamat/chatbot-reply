@@ -1,5 +1,5 @@
-# pycharge
-PYthon CHAtbot Reply GEnerator
+# chatbot_reply
+Chatbot Reply Generator in Python
 
 ##about this project
 My goal is to create a scriptable chatbot engine for Python that could be easily integrated into larger projects. By chatbot engine, I mean software that produces responses to user messages, either text responses or the execution of Python code or both, but that isn't responsible for receiving or delivering them.
