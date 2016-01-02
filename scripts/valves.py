@@ -30,7 +30,7 @@ class ValveScript(Script):
     def pattern_what_is_the_drainvalve_status(self):
         return "The {{match0}} is {0}.".format(self.drainvalvestatus())
 
-    @pattern("(tell me about the|how is the|[what is] [the]) _%a:anyvalve status")
+    @pattern("(tell me about the|how is the|what is [the]) _%a:anyvalve status")
     def pattern_what_is_the_anyvalve_status(self):
         return "<{match0} status>"
 

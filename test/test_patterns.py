@@ -95,8 +95,8 @@ class PatternParserTestCase(unittest.TestCase):
                      ["good to meet you", "good to meet fred",
                       "good to meet mrs fred"],
                      ["good to meet", "good to meet mr"]),
-                    (u"voilà",
-                     [u"voilà"],
+                    ("voilà",
+                     ["voilà"],
                      ["voila"]),
                     ("my car is %a:colors",
                      ["my car is red", "my car is blue", "my car is light yellow"],
@@ -140,7 +140,7 @@ class PatternParserTestCase(unittest.TestCase):
             regex = self.pp.regex(self.pp.parse(pattern), variables) + "$"
             regexc = re.compile(regex, re.UNICODE)
             for good in p[1]:
-                match = re.match(regexc, good)
+                match = re.match(regexc, unicode(good, 'utf-8'))
                 if match is None:
                     print 'Failed to match "{0}" with "{1}" using regex "{2}"'.format(
                         pattern, good, regex)

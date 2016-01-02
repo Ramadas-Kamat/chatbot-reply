@@ -88,5 +88,5 @@ class Script(object):
                         break
                     else:
                         choice -= abs(weight)
-        return reply
+        return reply.format(*[], **Script.match)
     

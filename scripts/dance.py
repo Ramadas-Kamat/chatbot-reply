@@ -35,24 +35,24 @@ class HokeyPokeyScript(Script):
 
     @pattern("hello _*")
     def pattern_hello_star(self):
-        return "<hello> {0}".format(Script.match[0])
+        return "<hello> {match0}"
 
     @pattern("knock knock")
     def pattern_knock_knock(self):
         return "Who's there?"
 
-    @pattern("_*", previous="who is there")
+    @pattern("_*", previous="whos there")
     def pattern_star_prev_who_is_there(self):
-        return "{0} who?".format(Script.match[0])
+        return "{match0} who?"
 
     @pattern("_*", previous="* who")
     def pattern_star_prev_star_who(self):
-        return "Lol %s! That's a good one!".format(Script.match[0])
+        return "Lol {match0}! That's a good one!"
 
     @pattern("put your _* in")
     def pattern_put_your_star_in(self):
-        return ("I put my {0} in, I put my {0} out, "
-                "I shake it all about!".format(Script.match[0]))
+        return ("I put my {match0} in, I put my {match0} out, "
+                "I shake it all about!")
 
     @pattern("where are you in the dance")
     def pattern_where_are_you_in_the_dance(self):

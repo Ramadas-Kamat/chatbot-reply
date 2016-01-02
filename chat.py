@@ -33,4 +33,4 @@ if __name__ == "__main__":
             else:
                 ch._botvars["debug"] = "True"
         else:
-            print("Bot> " + ch.reply("local", msg))
+            print("Bot> " + ch.reply("local", unicode(msg, 'utf-8')))

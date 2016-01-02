@@ -15,16 +15,14 @@ import os
 import re
 import traceback
 
+from codecs import BOM_UTF8
+
 from .patterns import PatternParser
-from .exceptions import PatternError, PatternVariableNotFoundError
-from .exceptions import PatternMethodSpecError, RecursionTooDeepError
-from .exceptions import NoRulesFoundError
+from .exceptions import *
 from .script import Script, ScriptRegistrar
 
-#strict: making it an option to throw errors instead of ignoring them
 #todo use imp thread locking, though this thing is totally not thread-safe
 #should force lowercase be an option?
-# load_directory or load_script_directory, all the loading code needs work
 # the topic database should be its own class
 # weights for previous
 # match0 and botmatch0
@@ -87,8 +85,11 @@ class ChatbotEngine(object):
 
         self._uservars = {}
         self._substitutions = {}
+        self._history = History(10)
         self.clear_rules()
-        self._parser = PatternParser()
+
+        self._encoding = None
+        self._pp = PatternParser()
         
         self._say("Chatbot instance created.")
 
@@ -100,12 +101,24 @@ class ChatbotEngine(object):
         """
         if warning:
             if self._errorlogger:
-                self._errorlogger("[Chatbot {0}] {1}".format(warning,
+                self._errorlogger(u"[Chatbot {0}] {1}".format(warning,
                                                              message))
         elif self._botvars.get("debug", "False") == "True" and self._debuglogger:
-            self._debuglogger("[Chatbot] {0}".format(message))
+            self._debuglogger(u"[Chatbot] {0}".format(message))
 
     ##### Reading scripts and building the database of rules #####
+
+    def clear_rules(self):
+        """ Make a fresh new empty rules database. """
+        self._topics = {}
+        self._new_topic("all")
+        # it would be prudent to unicodify any str's in the variables
+        self._encoding = None
+        
+    def _new_topic(self, topic):
+        """ Add a new topic to the rules database. """
+        self._topics[topic] = Topic()
+ 
     
     def load_script_directory(self, directory):
         """Iterate through the .py files in a directory, and import all of
@@ -115,27 +128,29 @@ class ChatbotEngine(object):
         """
         self.cache_built = False
         ScriptRegistrar.clear()
+        Script.botvars = self._botvars
         
         for item in os.listdir(directory):
             if item.lower().endswith(".py"):
+                self._say("Importing " + item)
                 filename = os.path.join(directory, item)
                 self._import(filename)
 
-
-        Script.botvars = self._botvars
-
+        self._pp.encoding = self._encoding
         for cls in ScriptRegistrar.registry:
             self._say("Loading scripts from" + cls.__name__)
             self._load_script(cls)
 
         if sum([len(t.rules) for k, t in self._topics.items()]) == 0:
             raise NoRulesFoundError(
-                "No rules were found in {0}/*.py".format(directory))
+                u"No rules were found in {0}/*.py".format(directory))
                 
     def _import(self, filename):
         """Import a python module, given the filename, but to avoid creating
         namespace conflicts give the module a name consisting of
-        _PREFIX + filename (minus any extension).
+        _PREFIX + filename (minus any extension). Also check that the 
+        source file encoding doesn't conflict with anything we've already
+        loaded.
 
         """
         path, name = os.path.split(filename)
@@ -145,17 +160,100 @@ class ChatbotEngine(object):
         modname = self._PREFIX + name
         file, filename, data = imp.find_module(name, [path])
         mod = imp.load_module(modname, file, filename, data)
+        self._check_encodings(filename)
         return mod
 
-    def _load_script(self, script_class):
-        """Given a subclass of Script, create an instance of it, then
-        find all of its methods which begin with one of our keywords
-        and add them to the topic database
+    def _check_encodings(self, filename):
+        """Given the filename of a Python source file, that's already been
+        successfully imported by the interpreter, determine it's
+        source encoding by reading the first two lines and looking for
+        either the BOM_UTF8 or the encoding cookie comment. If it
+        doesn't match the encoding of any file we've previously read
+        raise a MismatchedEncodingsError, otherwise remember it to
+        check against the next file.
 
         """
-        dispatch = [("pattern", self._load_pattern),
-                    ("substitute", self._load_substitute)]
+        with open(filename, "r") as f:
+            encoding = self._detect_encoding(f.readline)
+        if self._encoding == None:
+            self._encoding = encoding
+            self._encoding_filename = filename
+        elif encoding != self._encoding:
+            raise MismatchedEncodingsError(
+                u"All script files must use the same source encoding. "
+                u"{0} is using {1} and {2} is using {3}.".format(
+                    self._encoding_filename, self._encoding, filename, encoding))
 
+    def _detect_encoding(self, readline):
+        """Detect the encoding that is used in a Python source file. Based on
+        tokenize.py from Python 3.2, simplified a bit because we can
+        assume there are no errors, because the file already was
+        successfully loaded by the Python interpreter.
+
+        It will call readline a maximum of twice, and return the
+        encoding used (as a string).
+
+        It detects the encoding from the presence of a utf-8 bom or an
+        encoding cookie as specified in pep-0263. If none is found, it
+        will return utf-8.
+
+        """
+        default = 'utf-8'
+        def read_or_stop():
+            try:
+                return readline()
+            except StopIteration:
+                return ""
+
+        def find_cookie(line):
+            # Decode as UTF-8. Either the line is an encoding declaration,
+            # in which case it should be pure ASCII, or it must be UTF-8
+            # per default encoding.
+            line_string = line.decode('utf-8')
+            matches = re.findall("coding[:=]\s*([-\w.]+)", line_string)
+            if not matches:
+                return None
+            encoding = get_normal_name(matches[0])
+            return encoding
+
+        def get_normal_name(orig_enc):
+            # Only care about the first 12 characters.
+            enc = orig_enc[:12].lower().replace("_", "-")
+            if enc == "utf-8" or enc.startswith("utf-8-"):
+                return "utf-8"
+            if enc in ("latin-1", "iso-8859-1", "iso-latin-1") or \
+               enc.startswith(("latin-1-", "iso-8859-1-", "iso-latin-1-")):
+                return "iso-8859-1"
+            return orig_enc
+
+        first = read_or_stop()
+        if not first or first.startswith(BOM_UTF8):
+            return default
+
+        encoding = find_cookie(first)
+        if encoding:
+            return encoding
+
+        second = read_or_stop()
+        if not second:
+            return default
+
+        encoding = find_cookie(second)
+        if encoding:
+            return encoding
+
+        return default
+
+    def _load_script(self, script_class):
+        """Given a subclass of Script, create an instance of it,
+        find all of its methods which begin with one of our keywords
+        and add them to the rules database for the topic of the 
+        script instance.
+
+        If the instance defines an alternates dictionary, substitute
+        those into the patterns of the rules.
+
+        """
         instance = script_class()
         script_class_name = (instance.__module__[len(self._PREFIX):] + "." +
                              instance.__class__.__name__)
@@ -169,107 +267,140 @@ class ChatbotEngine(object):
         alternates = {}
         if hasattr(instance, "alternates"):
             try:
-                alternates = Rule.validate_alternates(instance.alternates,
+                alternates = self._validate_alternates(instance.alternates,
                                                       script_class_name)
             except PatternError as e:
                 e.args += (" in self.alternates of " + script_class_name,)
                 raise
         
         for attribute in dir(instance):
-            for name, func in dispatch:
-                if (attribute.startswith(name) and
-                    hasattr(getattr(instance, attribute), '__call__')):
-                    func(topic, script_class_name, instance, attribute, alternates)
+            if attribute.startswith('pattern'):
+                self._load_rule(topic, script_class_name, instance, attribute,
+                          alternates)
 
-    def clear_rules(self):
-        self._topics = {}
-        self._new_topic("all")
+   
+    def _validate_alternates(self, alternates, script_class_name):
+        valid = {}
+        try:
+            for k, v in alternates.items():
+                try:
+                    valid[k] = self._pp.format(self._pp.parse(str(v),
+                                                              simple=True))
+                except PatternError as e:
+                    e.args += (u' in alternates["{0}"] '
+                               'of {1}.'.format(unicode(k, self.encoding),
+                                                script_class_name),)
+                    raise
+        except PatternError:
+            raise
+        except AttributeError as e:
+            raise InvalidAlternatesError(
+                u"self.alternates is not a dictionary in {0}.".format(
+                    script_class_name))
         
-    def _new_topic(self, topic):
-        self._topics[topic] = Topic()
-    
-    def _load_pattern(self, topic, script_class_name, instance, attribute,
+        return {"a":valid}
+
+    def _load_rule(self, topic, script_class_name, instance, attribute,
                       alternates):
+        """ Given an instance of a class derived from Script and
+        a callable attribute, check that it is declared correctly, 
+        and then add it to the rules database for the given topic.
+        """
         method = getattr(instance, attribute)
-        argspec = inspect.getargspec(method)
         rulename = script_class_name + "." + attribute
 
-        if self._check_pattern_spec(rulename, argspec):
-            raw_pattern, raw_previous, weight = argspec.defaults
-            rule = Rule(raw_pattern, raw_previous, weight, alternates,
-                            method, rulename, say=self._say)
-            tup = (rule.formatted_pattern, rule.formatted_previous)
-            if tup in self._topics[topic].rules:
-                existing_rule = self._topics[topic].rules[tup]
-                if method != existing_rule.rule:
-                    self._say('Ignoring pattern "{0}","{1}" at {2} because it '
-                              'is a duplicate of the pattern of {3} '
-                              'for the topic "{4}".'.format(
-                                  raw_pattern, raw_previous, rulename,
-                                  existing_rule.rulename, topic),
-                              warning = "Warning")
-            else:
-                self._topics[topic].rules[tup] = rule
-                self._say('Loaded pattern "{0}", previous="{1}", weight={2}, '
-                          'method = {3}'.format(raw_pattern, raw_previous,
-                                                weight, attribute))
+        argspec = self._get_method_spec(rulename, method)
 
-    def _check_pattern_spec(self, name, argspec):
+        raw_pattern, raw_previous, weight = argspec.defaults
+        rule = Rule(self._pp, raw_pattern, raw_previous, weight, alternates,
+                    method, rulename, say=self._say)
+        tup = (rule.pattern.formatted_pattern, rule.previous.formatted_pattern)
+        if tup in self._topics[topic].rules:
+            existing_rule = self._topics[topic].rules[tup]
+            if method != existing_rule.method:
+                self._say(u'Ignoring pattern "{0[0]}","{0[1]}" at {1} '
+                          u'because it is a duplicate of the pattern of {2} '
+                          u'for the topic "{3}".'.format(tup,
+                              rulename, existing_rule.rulename, topic),
+                          warning = "Warning")
+        else:
+            self._topics[topic].rules[tup] = rule
+            self._say(u'Loaded pattern "{0[0]}", previous="{0[1]}", ' 
+                      u'weight={1}, method={2}'.format(tup, weight,
+                                                         attribute))
+
+    def _get_method_spec(self, name, method):
         """ Check that the passed argument spec matches what we expect the
-        @pattern decorator in scripts.py to do. Prints an error
-        message and returns false if a problem is found, otherwise
-        returns True. The name and func arguments are only used to
-        make a better error message.  """
+        @pattern decorator in scripts.py to do. Raises PatternMethodSpecError
+        if a problem is found.
+        """
+        if not hasattr(method, '__call__'):
+            raise PatternMethodSpecError(
+                u"{0} begins with 'pattern' but is not callable.".format(
+                    name))
+        argspec = inspect.getargspec(method)
         if (len(argspec.args) != 4 or
             " ".join(argspec.args) != "self pattern previous weight" or
             argspec.varargs is not None or
             argspec.keywords is not None or
             len(argspec.defaults) != 3):
-            raise PatternMethodSpecError("{0} was not decorated by @pattern "
-                     "or it has the wrong number of arguments".format(name))
-        return True
+            raise PatternMethodSpecError(u"{0} was not decorated by @pattern "
+                     "or it has the wrong number of arguments.".format(name))
+        return argspec
 
-    
     def _load_substitute(self, topic, script_class, attribute):
         pass
 
     def build_cache(self):
+        """ Sort the rules for each topic """
         if self.cache_built:
             return
         for n, t in self._topics.items():
             t.sortedrules = sorted([rule for key, rule in t.rules.items()],
                                    reverse=True)
-            for rule in t.sortedrules:
-                rule.cache_regexes()
         self.cache_built = True
 
     
     def reply(self, user, message, depth=0):
+        """ For the current topic, find the best matching rule for the message.
+        Recurse as necessary if the first rule returns references to other 
+        rules. 
+
+        Exceptions:
+        RecursionTooDeepError -- if recursion goes over depth limit passed
+            to __init__
+        PatternVariableNotFoundError -- if a pattern references a user or bot 
+            variable that is not defined
+        """
         if depth == 0:
             self.build_cache()
-            self._say('Asked to reply to: "{0}" from {1}'.format(message,
-                                                                 unicode(user)))
+            self._say(u'Asked to reply to: "{0}" from {1}'.format(message, user))
             self._set_user(user)
             Script.botvars = self._botvars
+            if not isinstance(message, unicode):
+                raise TypeError("message argument must be unicode, not str")
         elif depth < self._depth_limit:
-            self._say('Recursing to find reply to "{0}", depth == {1}'.format(
+            self._say(u'Recursing to find reply to "{0}", depth == {1}'.format(
                 message, depth))
         else:
             raise RecursionTooDeepError
-        
+
+        variables = {"u":Script.uservars, "b":Script.botvars}
         target = Target(message, say=self._say)
         reply = ""
         for rule in self._topics["all"].sortedrules:
-            m = re.match(rule.regexc, target.normalized)
+            m = rule.match(self._pp, target, self._history, variables)
             if m is not None:
-                self._say("Found pattern match, rule {0}".format(
+                self._say(u"Found pattern match, rule {0}".format(
                     rule.rulename))
-                Script.match = self._match_dict(m.groupdict())
-                reply = rule.rule()
+                Script.match = m.dict
+                reply = rule.method()
                 break
         if not reply:
             self._say("Empty reply generated")
-        return unicode(reply)
+        if depth == 0:
+            self._history.update(message, Target(reply, say=self._say))
+        return reply
 
     def _set_user(self, user):
         if user not in self._uservars:
@@ -278,8 +409,8 @@ class ChatbotEngine(object):
         
         topic = uservars["__topic__"]
         if topic not in self._topics:
-            self._say("User {0} is in empty topic {1}, "
-                      "returning to 'all'".format(unicode(user), topic))
+            self._say(u"User {0} is in empty topic {1}, "
+                      "returning to 'all'".format(user, topic))
             topic = uservars["__topic__"] = "all"
 
         Script.set_user(user, uservars)
@@ -299,6 +430,36 @@ class Topic(object):
         self.rules = {}
         self.sortedrules = []
     
+class Pattern(object):
+    def __init__(self, pp, raw, alternates, say=print):
+        self.raw = raw
+        if self.raw:
+            self._parse_tree = pp.parse(raw)
+            self.formatted_pattern = pp.format(self._parse_tree)
+            self.score = pp.score(self._parse_tree)
+            self.regexc = self._get_regexc(pp, self._parse_tree, alternates)
+        else:
+            self._parse_tree = None
+            self.formatted_pattern = ""
+            self.score = pp.score(pp.parse("*"))
+            self.regexc = None
+
+    def __len__(self):
+        return len(self.raw)
+
+    def _get_regexc(self, pp, parsetree, alternates):
+        try:
+            return re.compile(pp.regex(parsetree, alternates) + "$",
+                              flags=re.UNICODE)
+        except PatternVariableNotFoundError:
+            self._say(u"[Pattern] Failed to cache regex for {0}.".format(
+                pp.format(parsetree)))
+            return None
+
+    def __eq__(self, other):
+        return self.formatted_pattern == other.formatted_pattern
+
+
 class Rule(object):
     """ Pattern matching and response rule.
 
@@ -324,58 +485,55 @@ class Rule(object):
     full set of comparison operators - to enable sorting first by weight then 
             score
     """
-    _pp = PatternParser()
-    
-    def __init__(self, raw_pattern, raw_previous, weight, alternates,
-                 rule, rulename, say=lambda s: None):
-        self._say = say
+    def __init__(self, pp, raw_pattern, raw_previous, weight, alternates,
+                 method, rulename, say=print):
+        previous = ""
         try:
-            self._pattern_tree = self.__class__._pp.parse(raw_pattern)
+            if not raw_pattern:
+                raise PatternError("Empty string found")
+            self.pattern = Pattern(pp, raw_pattern, alternates, say) 
+            previous = "previous"
+            self.previous = Pattern(pp, raw_previous, alternates, say)
         except PatternError as e:
-            e.args += (" in pattern of {0}.".format(rulename),)
+            e.args += (u" in {0} pattern of {1}.".format(previous, rulename),)
             raise
-        if raw_previous != "":
-            try:
-                self._previous_tree = self.__class__._pp.parse(raw_previous)
-            except PatternError as e:
-                e.args += (" in previous pattern of {0}.".format(rulename),)
-                raise
-        else:
-            self._previous_tree = None    
         
         self.weight = weight
-        self.alternates = alternates
-        self.rule = rule
+        self.method = method
         self.rulename = rulename
-        self.formatted_pattern = self.__class__._pp.format(self._pattern_tree)
-        self.formatted_previous = None
-        if self._previous_tree is not None:
-            self.__class__._pp.format(self._previous_tree)            
-        self.score = self.__class__._pp.score(self._pattern_tree)
-        self.pattern_regexc = None
-        self.previous_regexc = None
+        self._say = say
 
-    def cache_regexes(self):
-        self.pattern_regexc = self._get_regexc(self._pattern_tree,
-                                               self.alternates)
-        self.previous_regexc = self._get_regexc(self._previous_tree,
-                                                self.alternates)
-        
-    def _get_regexc(self, parsetree, alternates):
-        try:
-            self.regexc = re.compile(
-                self.__class__._pp.regex(self._pattern_tree, alternates) + "$",
-                re.UNICODE)
-        except PatternVariableNotFoundError:
-            self._say("[Rule] Failed to cache regex for {0}.".format(
-                self.formatted_pattern))
+    def match(self, pp, target, history, variables):
+        m = re.match(self.pattern.regexc, target.normalized)
+        if m is None:
             return None
+        mp = None
+        reply_target = None
+        if m is not None and self.previous and history.replies:
+            reply_target = history.replies[0]
+            mp = re.match(self.previous.regexc, reply_target.normalized)
+            if mp is None:
+                return None
+
+        return Match(m, mp, target, reply_target)
+
+        
 
     def __lt__(self, other):
-        return (self.weight < other.weight or
-                (self.weight == other.weight and self.score < other.score))
+        return (self.weight < other.weight
+                or
+                (self.weight == other.weight
+                 and self.pattern.score < other.pattern.score)
+                or
+                (self.weight == other.weight
+                 and self.pattern.score == other.pattern.score
+                 and self.previous.score < other.previous.score))
+                
     def __eq__(self, other):
-        return self.weight == other.weight and self.score == other.score
+        return (self.weight == other.weight
+                and self.pattern.score == other.pattern.score
+                and self.previous.score == other.previous.score)
+
     def __gt__(self, other):
         return (self.weight > other.weight or
                 (self.weight == other.weight and self.score > other.score))
@@ -386,17 +544,6 @@ class Rule(object):
     def __ne__(self, other):
         return not self == other
 
-    @classmethod
-    def validate_alternates(cls, alternates, script_class_name):
-        valid = {}
-        for k, v in alternates.items():
-            try:
-                valid[k] = cls._pp.format(cls._pp.parse(v, simple=True))
-            except PatternError as e:
-                e.args += (' in alternates["{0}"] '
-                           'of {1}.'.format(k, script_class_name),)
-                raise
-        return {"a":valid}
 
     
 class Target(object):
@@ -434,18 +581,25 @@ class Target(object):
                                       ["eggs"], ["and"], ["milk"]]
                                      "i need bacon comma eggs and milk"
     """
-    def __init__(self, text, substitutions=None, say=lambda s: None):
+    def __init__(self, text, substitutions=None, say=print):
         self.orig_text = text
-        self.orig_words = re.split('\s+', text, re.UNICODE)
-        lc_words = [word.lower() for word in self.orig_words]
-        sub_words = [self._do_substitutions(word, substitutions)
-                     for word in lc_words]
+        self.orig_words = self.split_on_spaces(text)
+        self.lc_words = [word.lower() for word in self.orig_words]
+        self.sub_words = [self._do_substitutions(word, substitutions)
+                          for word in self.lc_words]
         self.tokenized_words = [[self._kill_non_alphanumerics(word)
-                        for word in wl] for wl in sub_words]
-        self.normalized = " ".join([" ".join(wl) for wl in self.tokenized_words])
+                        for word in wl] for wl in self.sub_words]
+        self.normalized = u" ".join(
+                                [u" ".join(wl) for wl in self.tokenized_words])
         self._say = say
-        self._say('[Target] Normalized message to "{0}"'.format(self.normalized))
+        self._say(u'[Target] Normalized message to "{0}"'.format(self.normalized))
 
+    def split_on_spaces(self, text):
+        """ Because this has to work in Py 2.6, and re.split doesn't do UNICODE
+        in 2.6.  Return text broken into words by whitespace. """
+        matches = [m for m in re.finditer("[\S]+", text, flags=re.UNICODE)]
+        results = [text[m.span()[0]:m.span()[1]] for m in matches]
+        return results
 
     def _do_substitutions(self, word, substitutions):
         """Check a word against the substitutions dictionary. If the word is
@@ -458,9 +612,36 @@ class Target(object):
             replacement = self._substitutions.get(word, word)
             return re.split('\s+', replacement, flags=re.UNICODE)
 
-    def _kill_non_alphanumerics(self, word):
+    def _kill_non_alphanumerics(self, text):
         """remove any non-alphanumeric characters from a string and return the
-        result
+        result. re.sub doesn't do UNICODE in python 2.6.
 
         """
-        return re.sub("[\W]+", "", word, re.UNICODE)
+        matches = [m for m in re.finditer("[\w]+", text, flags=re.UNICODE)]
+        result = "".join([text[m.span()[0]:m.span()[1]] for m in matches])
+        return result        
+            
+class History(object):
+    def __init__(self, size):
+        self.messages = []
+        self.replies = []
+        self.size = size
+        pass
+    def update(self, message, reply):
+        if len(self.messages) >= self.size:
+            pop(self.messages)
+        if len(self.replies) >= self.size:
+            pop(self.replies)
+        self.messages.insert(0, message)
+        self.replies.insert(0, reply)
+
+class Match(object):
+    def __init__(self, m_pattern, m_previous, target, previous_target, say=None):
+        self.dict = {}
+        for k, v in m_pattern.groupdict().items():
+            self.dict[k] = v
+        if m_previous is not None:
+            for k, v in m_previous.groupdict().items():
+                self.dict["bot"+k] = v
+
+

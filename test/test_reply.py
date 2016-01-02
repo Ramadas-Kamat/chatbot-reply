@@ -15,8 +15,9 @@ import unittest
 from mock import Mock
 
 from chatbot_reply import ChatbotEngine
-from chatbot_reply import NoRulesFoundError
+from chatbot_reply import NoRulesFoundError, InvalidAlternatesError
 from chatbot_reply import PatternError, PatternMethodSpecError
+from chatbot_reply import MismatchedEncodingsError
 from chatbot_reply.reply import Target
 
 class RuleTestCase(unittest.TestCase):
@@ -130,7 +131,7 @@ class TestScript(Script):
 """
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
-        self.assertRaises(NameError, self.ch.reply, "local", "test")
+        self.assertRaises(NameError, self.ch.reply, "local", unicode("test"))
         
     def test_Reply_Chooses_HigherScoringRule(self):
         py = """
@@ -167,15 +168,53 @@ class TestScript(Script):
         # lack of hash order, but I tried commenting out sorted() and it
         # triggered the assert.
         # could programatically write 10000 methods with wildcards...
-        self.assertEqual(self.ch.reply("local", "hello world"), "pass")
+        self.assertEqual(self.ch.reply("local", unicode("hello world")), "pass")
+        self.assertFalse(self.errorlogger.called)
 
     def test_LoadClearLoad_WorksWithoutComplaint(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    @pattern("hello")
+    def pattern_foo(self):
         pass
+"""
+        self.write_py(py)
+        self.ch.load_script_directory(self.scripts_dir)
+        self.ch.clear_rules()
+        self.ch.load_script_directory(self.scripts_dir)        
+        self.assertFalse(self.errorlogger.called)
 
     def test_Load_RaisesPatternError_OnMalformedAlternates(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    def __init__(self):
+        self.alternates = "(hello|world)"
+    @pattern("hello")
+    def pattern_foo(self):
         pass
+"""
+        self.write_py(py)
+        self.assertRaises(InvalidAlternatesError,
+                          self.ch.load_script_directory,
+                          self.scripts_dir)
+
 
     def test_Load_RaisesNoRulesFoundError_OnTopicNone(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    def __init__(self):
+        self.topic = None
+    @pattern("hello")
+    def pattern_foo(self):
+        pass
+"""
+        self.write_py(py)
+        self.assertRaises(NoRulesFoundError,
+                          self.ch.load_script_directory,
+                          self.scripts_dir)
         pass
 
     def test_Reply_Passes_MatchedText(self):
@@ -187,6 +226,21 @@ class TestScript(Script):
         # not yet implemented
         pass
 
+    def test_Load_RaisesOnMismatchedCodecs(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    @pattern("hello")
+    def pattern_foo(self):
+        pass
+"""
+        self.write_py(py, filename="foo.py")
+        py = "# coding=latin-1\n" + py
+        self.write_py(py, filename="bar.py")
+        self.assertRaises(MismatchedEncodingsError,
+                          self.ch.load_script_directory,
+                          self.scripts_dir)
+        
     def write_py(self, py, filename="test.py"):
         filename = os.path.join(self.scripts_dir, filename)
         with open(filename, "wb") as f:

@@ -7,17 +7,35 @@
 """
 import re
 
-from . import PatternError, PatternVariableNotFoundError
+from .exceptions import *
 
 # TODO - could pass in a string such as "uba" with variable classes to create
+# TODO - replace all those tuples in the parse tree with class instances
+# TODO - add a wrapper for re.match that gets the unicode right
+# TODO - make the exception classes handle unicode to str conversion
+# TODO - unicode literals wouuld probably work here
 
 class StopScanLoop(StopIteration):
     pass
 
 class PatternParser(object):
-    """ Pattern Parser class for Pycharge simplified regular expression patterns."""
+    """ Pattern Parser class for simplified regular expression patterns.
+        public instance variable : encoding
+    """
+    
 
     def __init__(self):
+        """ Create a PatternParser object. All the internal work with regular
+        expressions is done using unicode strings. If you pass in str's, they
+        will be converted to unicode using the encoding keyword parameter,
+        which defaults to utf-8.
+
+        That being said, the output of PatternParser.regex isn't going to work
+        on str's containing special characters unless you convert them to unicode
+        and use re.UNICODE.
+        """
+        self.encoding = "utf-8"
+        
         self._every_token = TokenMatcher()
         self._alternates_tokens = TokenMatcher()
         self._variables_tokens = TokenMatcher()
@@ -56,6 +74,8 @@ class PatternParser(object):
     ##### The public methods #####
     
     def parse(self, pattern, simple=False):
+        if isinstance(pattern, str):
+            pattern = unicode(pattern, self.encoding)
         if simple:
             tokenizer = self._alternates_tokens.tokenizer
         else:
@@ -67,11 +87,18 @@ class PatternParser(object):
 
     def format(self, pattern_tree):
         output = [self._format_pattern_tuple(tup) for tup in pattern_tree]
-        return "".join(output)
+        result = "".join(output)
+        if isinstance(result, unicode):
+            result = result.decode(self.encoding)
+        return result
 
+    # need to wrap this in something that handles unicode correctly
     def regex(self, pattern_tree, variables):
         named_groups = [0]
-        return self._regex(pattern_tree, named_groups, variables)
+        result =  self._regex(pattern_tree, named_groups, variables)
+        if isinstance(result, str):
+            result = unicode(result, self.encoding)
+        return result
         
     ##### Parsing  #####
     
@@ -248,7 +275,7 @@ class PatternParser(object):
             return outerself._score_tuple(data)
 
         def regex(self, outerself, code, data, named_groups, variables):
-            regex = "(?P<match{0}>{1})".format(
+            regex = u"(?P<match{0}>{1})".format(
                 named_groups[0],
                 outerself._regex_pattern_tuple(data, named_groups, variables))
             named_groups[0] += 1
@@ -285,25 +312,26 @@ class PatternParser(object):
         def regex(self, outerself, code, data, named_groups, variables):
             if data[0] not in variables or data[1] not in variables[data[0]]:
                 raise PatternVariableNotFoundError(
-                    "Chatbot variable %{0}:{1} not found".format(data[0],
+                    u"Chatbot variable %{0}:{1} not found".format(data[0],
                                                                  data[1]))
-            # The user script could have put anything at all in here. Coerce it
-            # into something safe to put into a regular expression. Try parsing
-            # it, and if that fails, coerce it to a string, and if that fails
-            # substitute in an error string that will be hard to miss in
-            # a log file even when buried in regular expression gibberish
+            value = variables[data[0]][data[1]]
+            if isinstance(value, str):
+                value = unicode(value, outerself.encoding)
+            if not isinstance(value, unicode):
+                raise PatternVariableValueError(
+                    u"Value in pattern variable %{0}:{1} "
+                    "could not be used because it is not a string.".format(
+                        data[0], data[1]))
+            value = value.lower()
             try:
-                value = unicode(variables[data[0]][data[1]]).lower()
                 parse_tree = outerself._parse(
                     outerself._tokens(value,
                                       outerself._variables_tokens.tokenizer))
                 regex = outerself.regex(parse_tree, None)
-            except PatternError:
-                regex = re.escape(value) 
-            except Exception as e:
-                print e
-                regex = "ERROR TRYING TO USE VARIABLE %{0}:{1}".format(
-                    data[0], data[1])
+            except PatternError as e:
+                e.args += (u" in variable %{0}:{1}".format(data[0], data[1]),)
+                raise
+
             return regex + r"\b"
 
     class Optional(Token):
@@ -325,7 +353,7 @@ class PatternParser(object):
     class Terminator(Token):
         def parse(self, outerself, tokens, parsetree, code, text, terminator):
             if terminator != text:
-                raise PatternError("Found an unexpected %s" % text)
+                raise PatternError("Found an unexpected {0}".format(text))
             outerself._remove_trailing_space(parsetree)
             outerself._group_tuples(parsetree)
             raise StopScanLoop
@@ -357,7 +385,7 @@ class PatternParser(object):
 
     class Invalid(Token):
         def parse(self, outerself, tokens, parsetree, code, text, terminator):
-            raise PatternError("Found an unexpected character {0}".format(text))
+            raise PatternError(u"Found an unexpected character {0}".format(text))
 
  
 class TokenMatcher(object):
@@ -365,8 +393,7 @@ class TokenMatcher(object):
         self.regexes = []
         self.tokenizer = None
     def compile(self):
-        self.tokenizer = re.compile("|".join(self.regexes),
-                                    re.UNICODE | re.VERBOSE)
+        self.tokenizer = re.compile("|".join(self.regexes), re.UNICODE)
 
 class TokenMatcherGroup(object):
     def __init__(self):

@@ -31,18 +31,16 @@ class TutorialScript(Script):
 
     @pattern("_* told me to say _*")
     def pattern_star2_told_me_to_say_star(self):
-        return self.choose(
-            ['Why would {0} tell you to say "{1}"?',
-             'Are you just saying "{1}" because {0} told you to?']).format(
-                    Script.match[0], Script.match[1])
+        return ['Why would {match0} tell you to say "{match1}"?',
+                'Are you just saying "{match1}" because {match0} told you to?']
     
     @pattern("i am _#1 years old")
     def pattern_i_am_number1_years_old(self):
-        return "{0} isn't old at all!".format(Script.match[0])
+        return "{match0} isn't old at all!"
 
     @pattern("who is _*")
     def pattern_who_is_star(self):
-        return "I don't know who {0} is.".format(Script.match[0])
+        return "I don't know who {match0} is."
 
     @pattern("*")
     def pattern_star(self):
@@ -64,15 +62,14 @@ class TutorialScript(Script):
 
     @pattern("i am _(so|really|very) excited")
     def pattern_i_am_alt_excited(self):
-        return "What are you {0} excited about?".format(Script.match[0])
+        return "What are you {match0} excited about?"
 
     @pattern("i _(like|love) the color _*")
     def pattern_i_alt_the_color_star(self):
-        return self.choose[
-            "What a coincidence! I {0} that color too!",
-            "The color {1} is one of my favorites"
-            "Really? I {0} the color {1} too!"
-            "Oh I {0} {1} too!"].format(Script.match[0], Script.match[1])
+        return ["What a coincidence! I {match0} that color too!",
+                "The color {match1} is one of my favorites"
+                "Really? I {match0} the color {1} too!"
+                "Oh I {match0} {match1} too!"]
 
     @pattern("how [are] you")
     def pattern_how_opt_you(self):
@@ -92,13 +89,11 @@ class TutorialScript(Script):
 
     @pattern("what color is my _(red|blue|green|yellow) _*")
     def pattern_what_color_is_my_alt_star(self):
-        return "According to you, your {1} is {0}.".format(Script.match[0],
-                                                           Script.match[1])
+        return "According to you, your {match1} is {match0}."
 
     @pattern("my * is _%a:colors")
     def pattern_my_star_is_arrcolors(self):
-        return "I've always wanted a {1} {0}".format(Script.match[0],
-                                                     Script.match[1])
+        return "I've always wanted a {match1} {match0}"
 
     @pattern("google _*", weight=10)
     def pattern_google_star(self):
@@ -106,7 +101,7 @@ class TutorialScript(Script):
 
     @pattern("_* or whatever", weight=100)
     def pattern_star_or_whatever(self):
-        return "Whatever. <{0}>".format(Script.match[0])
+        return "Whatever. <{match0}>"
 
     @pattern("hello")
     def pattern_hello(self):
@@ -119,7 +114,7 @@ class TutorialScript(Script):
     @pattern("my name is _*~3")
     def pattern_my_name_is_star(self):
         Script.uservars["name"] = Script.match[0] # some equivalent of formal, or maybe raw input
-        return "It's nice to meet you, {0}.".format(Script.match[0])
+        return "It's nice to meet you, {match0}."
 
     @pattern("what is my name")
     def pattern_what_is_my_name(self):

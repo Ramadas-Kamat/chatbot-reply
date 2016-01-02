@@ -5,12 +5,14 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 from exceptions import PatternError, PatternVariableNotFoundError, PatternMethodSpecError
-from exceptions import NoRulesFoundError, RecursionTooDeepError
+from exceptions import NoRulesFoundError, RecursionTooDeepError, InvalidAlternatesError
+from exceptions import MismatchedEncodingsError
 from patterns import PatternParser
 from script import pattern, Script
 from reply import ChatbotEngine
 
 __all__      = ["ChatbotEngine", "Script", "pattern",
                 "PatternParser", "PatternError", "PatternVariableNotFoundError",
-                "NoRulesFoundError", "RecursionTooDeepError"
+                "NoRulesFoundError", "RecursionTooDeepError",
+                "InvalidAlternatesError", "MismatchedEncodingsError"
                 ]
