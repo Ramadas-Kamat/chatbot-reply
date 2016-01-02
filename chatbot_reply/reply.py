@@ -361,7 +361,7 @@ class ChatbotEngine(object):
         self.cache_built = True
 
     
-    def reply(self, user, message, depth=0):
+    def reply(self, user, message):
         """ For the current topic, find the best matching rule for the message.
         Recurse as necessary if the first rule returns references to other 
         rules. 
@@ -372,20 +372,25 @@ class ChatbotEngine(object):
         PatternVariableNotFoundError -- if a pattern references a user or bot 
             variable that is not defined
         """
-        if depth == 0:
-            self.build_cache()
-            self._say(u'Asked to reply to: "{0}" from {1}'.format(message, user))
-            self._set_user(user)
-            Script.botvars = self._botvars
-            if not isinstance(message, unicode):
-                raise TypeError("message argument must be unicode, not str")
-        elif depth < self._depth_limit:
-            self._say(u'Recursing to find reply to "{0}", depth == {1}'.format(
-                message, depth))
-        else:
-            raise RecursionTooDeepError
+        self.build_cache()
+        self._say(u'Asked to reply to: "{0}" from {1}'.format(message, user))
+        self._set_user(user)
+        Script.botvars = self._botvars
+        if not isinstance(message, unicode):
+            raise TypeError("message argument must be unicode, not str")
 
         variables = {"u":Script.uservars, "b":Script.botvars}
+
+        reply = self._reply(user, message, variables, 0)
+        self._history.update(message, Target(reply, say=self._say))
+        return reply
+
+    def _reply(self, user, message, variables, depth):
+        if depth > self._depth_limit:
+            raise RecursionTooDeepError
+        self._say(u'Trying to find reply to "{0}", depth == {1}'.format(
+            message, depth))
+        
         target = Target(message, say=self._say)
         reply = ""
         for rule in self._topics["all"].sortedrules:
@@ -396,10 +401,17 @@ class ChatbotEngine(object):
                 Script.match = m.dict
                 reply = rule.method()
                 break
+        matches = [m for m in re.finditer("<.*?>", reply, flags=re.UNICODE)]
+        matches.reverse()
+        for m in matches:
+            begin, end = m.span()
+            rep = self._reply(user, reply[begin + 1:end - 1], variables, depth + 1)
+            reply = reply[:begin] + rep + reply[end:]
+
         if not reply:
             self._say("Empty reply generated")
-        if depth == 0:
-            self._history.update(message, Target(reply, say=self._say))
+        else:
+            self._say("Generated reply: " + reply)
         return reply
 
     def _set_user(self, user):
@@ -509,15 +521,16 @@ class Rule(object):
             return None
         mp = None
         reply_target = None
-        if m is not None and self.previous and history.replies:
+        if self.previous:
+            if not history.replies:
+                return None
             reply_target = history.replies[0]
+            print("checking previous {0} vs target {1}".format(
+                self.previous.formatted_pattern, reply_target.normalized))
             mp = re.match(self.previous.regexc, reply_target.normalized)
             if mp is None:
                 return None
-
         return Match(m, mp, target, reply_target)
-
-        
 
     def __lt__(self, other):
         return (self.weight < other.weight
@@ -535,8 +548,7 @@ class Rule(object):
                 and self.previous.score == other.previous.score)
 
     def __gt__(self, other):
-        return (self.weight > other.weight or
-                (self.weight == other.weight and self.score > other.score))
+        return not (self == other or self < other)
     def __le__(self, other):
         return self < other or self == other
     def __ge__(self, other):
@@ -591,6 +603,8 @@ class Target(object):
                         for word in wl] for wl in self.sub_words]
         self.normalized = u" ".join(
                                 [u" ".join(wl) for wl in self.tokenized_words])
+        if say == None:
+            say = lambda s:s
         self._say = say
         self._say(u'[Target] Normalized message to "{0}"'.format(self.normalized))
 

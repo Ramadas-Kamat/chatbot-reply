@@ -30,7 +30,7 @@ class ValveScript(Script):
     def pattern_what_is_the_drainvalve_status(self):
         return "The {{match0}} is {0}.".format(self.drainvalvestatus())
 
-    @pattern("(tell me about the|how is the|what is [the]) _%a:anyvalve status")
+    @pattern("(tell me about the|how is the|what is [the]) _%a:anyvalve [status]")
     def pattern_what_is_the_anyvalve_status(self):
         return "<{match0} status>"
 
@@ -66,12 +66,12 @@ class ValveScript(Script):
         return "I will tell the {match0} to close" + self.stall_for_time()
 
     def stall_for_time(self):
-        return self.choose(" and get back to you shortly.",
-                           ". Give me just a moment.",
-                           ". I'll check back with you shortly."
-                           ". I'll check back with you in a moment.",
-                           " and get back to you in a moment.",
-                           " and get back to you in just a moment.")
+        return self.choose([" and get back to you shortly.",
+                            ". Give me just a moment.",
+                            ". I'll check back with you shortly."
+                            ". I'll check back with you in a moment.",
+                            " and get back to you in a moment.",
+                            " and get back to you in just a moment."])
 
     @pattern("_(open|close) it", previous="* shutoff valve * drain valve *")
     def pattern_open_close_it_previous_both_valves(self):
@@ -117,7 +117,7 @@ class ValveScript(Script):
 
     @pattern("(water|leak) sensor status")
     def pattern_water_sensor_status(self):
-        return "The water leak sensor is {0]",format(self.leaksensorstatus())
+        return "The water leak sensor is {0}".format(self.leaksensorstatus())
 
     @pattern("setup test")
     def pattern_setup_test(self):

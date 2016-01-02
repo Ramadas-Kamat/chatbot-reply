@@ -61,13 +61,13 @@ class HokeyPokeyScript(Script):
     @pattern("back to the right foot")
     def pattern_back_to_the_right_foot(self):
         Script.botvars["bodypart"] = "right foot"
-        return ["OK, I'm back on the right foot."]
+        return "OK, I'm back on the right foot."
 
     @pattern("what would the next one be")
     def pattern_what_would_the_next_one_be(self):
         next_part = self.next_body_part(Script.botvars["bodypart"])
-        return "After {0} comes {1}.".format((Script.botvars["bodypart"],
-                                            next_part))
+        return "After {0} comes {1}.".format(Script.botvars["bodypart"],
+                                            next_part)
 
     @pattern("skip to the next one")
     def pattern_skip_to_the_next_one(self):

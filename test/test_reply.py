@@ -37,7 +37,7 @@ class TargetTestCase(unittest.TestCase):
         problems = [r"ABC_abc 123 !@#$%^&**()-=+|}{[]\~~`';:/.,<>?", "",
                     "Apples, oranges and bananas!", "This one isn't as hard"]
         for p in problems:
-            t = Target(p)
+            t = Target(p, say=None)
             self.assertEqual(t.orig_text, p)
             self.assertEqual(len(t.orig_words), len(t.tokenized_words))
             for wl in t.tokenized_words:
