@@ -24,9 +24,12 @@ from .script import Script, ScriptRegistrar
 #todo use imp thread locking, though this thing is totally not thread-safe
 #should force lowercase be an option?
 # the topic database should be its own class
-# weights for previous
-# match0 and botmatch0
-# recursion
+# the pattern parser should be a class attribute of Pattern
+# dict subclass that makes everything be unicode
+# Script.alternates should use that
+# in load_rule convert things to unicode
+# after that PatternParser can assert everything is unicode
+# need a class for variable dictionaries
 
 
 class ChatbotEngine(object):
@@ -266,12 +269,8 @@ class ChatbotEngine(object):
 
         alternates = {}
         if hasattr(instance, "alternates"):
-            try:
-                alternates = self._validate_alternates(instance.alternates,
-                                                      script_class_name)
-            except PatternError as e:
-                e.args += (" in self.alternates of " + script_class_name,)
-                raise
+            alternates = self._validate_alternates(instance.alternates,
+                                                   script_class_name)
         
         for attribute in dir(instance):
             if attribute.startswith('pattern'):
@@ -280,24 +279,20 @@ class ChatbotEngine(object):
 
    
     def _validate_alternates(self, alternates, script_class_name):
-        valid = {}
-        try:
-            for k, v in alternates.items():
-                try:
-                    valid[k] = self._pp.format(self._pp.parse(str(v),
-                                                              simple=True))
-                except PatternError as e:
-                    e.args += (u' in alternates["{0}"] '
-                               'of {1}.'.format(unicode(k, self.encoding),
-                                                script_class_name),)
-                    raise
-        except PatternError:
-            raise
-        except AttributeError as e:
+        if not isinstance(alternates, dict):
             raise InvalidAlternatesError(
                 u"self.alternates is not a dictionary in {0}.".format(
                     script_class_name))
-        
+        valid = {}
+        for k, v in alternates.items():
+            try:
+                valid[k] = self._pp.format(self._pp.parse(str(v),
+                                                          simple=True))
+            except PatternError as e:
+                e.args += (u' in alternates["{0}"] '
+                           'of {1}.'.format(unicode(k, self._encoding),
+                                            script_class_name),)
+                raise
         return {"a":valid}
 
     def _load_rule(self, topic, script_class_name, instance, attribute,
@@ -359,6 +354,11 @@ class ChatbotEngine(object):
             t.sortedrules = sorted([rule for key, rule in t.rules.items()],
                                    reverse=True)
         self.cache_built = True
+        self._say("-"*20 + "Sorted rules" + "-"*20)
+        for r in t.sortedrules:
+            self._say('"{0}"/"{1}"'.format(r.pattern.formatted_pattern,
+                                           r.previous.formatted_pattern))
+        self._say("-"*52)
 
     
     def reply(self, user, message):
@@ -430,13 +430,6 @@ class ChatbotEngine(object):
     def _set_topic(self, user, topic):
         self._uservars[user]["__topic__"] = topic
 
-    def _match_dict(self, re_dict):
-        matches = {}
-        for k, v in re_dict.items(): #use sorted?
-            i = int(k[5:])
-            matches[i] = v
-        return matches
-
 class Topic(object):
     def __init__(self):
         self.rules = {}
@@ -445,11 +438,13 @@ class Topic(object):
 class Pattern(object):
     def __init__(self, pp, raw, alternates, say=print):
         self.raw = raw
+        self.alternates = alternates
+        self.say = say
         if self.raw:
             self._parse_tree = pp.parse(raw)
             self.formatted_pattern = pp.format(self._parse_tree)
             self.score = pp.score(self._parse_tree)
-            self.regexc = self._get_regexc(pp, self._parse_tree, alternates)
+            self.regexc = self._get_regexc(pp, alternates, say)
         else:
             self._parse_tree = None
             self.formatted_pattern = ""
@@ -459,13 +454,15 @@ class Pattern(object):
     def __len__(self):
         return len(self.raw)
 
-    def _get_regexc(self, pp, parsetree, alternates):
+    def _get_regexc(self, pp, alternates, say):
         try:
-            return re.compile(pp.regex(parsetree, alternates) + "$",
-                              flags=re.UNICODE)
+            regex = pp.regex(self._parse_tree, alternates) + "$"
+            say("Formatted Pattern: {0}, regex = {1}".format(
+                self.formatted_pattern, regex))
+            return re.compile(regex, flags=re.UNICODE)
         except PatternVariableNotFoundError:
             self._say(u"[Pattern] Failed to cache regex for {0}.".format(
-                pp.format(parsetree)))
+                self.formatted_pattern))
             return None
 
     def __eq__(self, other):
@@ -475,47 +472,74 @@ class Pattern(object):
 class Rule(object):
     """ Pattern matching and response rule.
 
-    Describes one method decorated by @pattern (see script.py). Parses
-    the simplified regular expression strings, raising an exception
+    Describes one method decorated by @patterns. Parses
+    the simplified regular expression strings, raising PatternError
     if there is an error. Can match the pattern and previous_pattern
     against tokenized input (a Target) and return a Match object.
 
     Public instance variables:
-    formatted_pattern - the pattern reformatted by the parser for
-                        more accurate comparisons
-    formatted_previous - the previous_pattern, reformatted by the parser
-    weight             - the weight, given to @pattern
-    alternates         - a dictionary 
-    rule               - a reference to the decorated method
-    rulename           - classname.methodname, for error messages
-    score              - a calculated score based on the amount of 
-                        actual words (not wildcards) in the pattern
+    pattern - the Pattern object to match against the current message
+    previous - the Pattern object to match against the previous reply
+    weight - the weight, given to @pattern
+    method - a reference to the decorated method
+    rulename - classname.methodname, for error messages
 
     Public methods:
-    cache_regexes --
-    match -- returns match object if it does
+    match - given current message and reply history, return a Match
+            object if the patterns match or None if they don't
     full set of comparison operators - to enable sorting first by weight then 
-            score
+            score of the two patterns
     """
     def __init__(self, pp, raw_pattern, raw_previous, weight, alternates,
                  method, rulename, say=print):
-        previous = ""
+        """ Create a new Rule object based on information supplied to the
+        @pattern decorator. Arguments:
+        pp - a PatternParser object
+        raw_pattern - simplified regular expression string (not necessarily 
+                      unicode) supplied to @pattern
+        raw_previous - simplified regular expression string (not necessarily 
+                      unicode)supplied to @pattern
+        weight -  weight supplied to @pattern
+        alternates - dictionary of variable names and values that can
+                   be substituted in the patterns by PatternParser
+        method - reference to method decorated by @pattern
+        rulename - modulename.classname.methodname, used to make better
+                 error messages
+        say - a function that takes a string, for debug output. Or None.
+
+        Raises PatternError, PatternVariableNotFoundError, 
+               PatternVariableValueError
+        """
         try:
+            previous = ""
             if not raw_pattern:
                 raise PatternError("Empty string found")
             self.pattern = Pattern(pp, raw_pattern, alternates, say) 
-            previous = "previous"
+            previous = "previous "
             self.previous = Pattern(pp, raw_previous, alternates, say)
-        except PatternError as e:
-            e.args += (u" in {0} pattern of {1}.".format(previous, rulename),)
+        except (PatternError, PatternVariableValueError,\
+               PatternVariableNotFoundError) as e:
+            e.args += (u" in {0}pattern of {1}.".format(previous, rulename),)
             raise
         
         self.weight = weight
         self.method = method
         self.rulename = rulename
+        if say is None:
+            say = lambda s:s
         self._say = say
 
     def match(self, pp, target, history, variables):
+        """ Return a Match object if the targets match the patterns
+        for this rule, or None if they don't.
+        Arguments:
+            pp - a PatternParser object
+            target - a Target object for the user's message
+            history - a History object containing Targets for previous
+                      messages and replies
+            variables - User and Bot variables for the PatternParser
+                      to substitute into the patterns
+        """
         m = re.match(self.pattern.regexc, target.normalized)
         if m is None:
             return None
@@ -525,7 +549,7 @@ class Rule(object):
             if not history.replies:
                 return None
             reply_target = history.replies[0]
-            print("checking previous {0} vs target {1}".format(
+            self._say("[Rule] checking previous {0} vs target {1}".format(
                 self.previous.formatted_pattern, reply_target.normalized))
             mp = re.match(self.previous.regexc, reply_target.normalized)
             if mp is None:
@@ -650,6 +674,12 @@ class History(object):
         self.replies.insert(0, reply)
 
 class Match(object):
+    """ dictionary
+    match0..matchn - memorized matches
+    botmatch0...botmatchn -- matches in the previous reply
+    orig0 -- untokenized text
+    bot_orig0 --
+    """
     def __init__(self, m_pattern, m_previous, target, previous_target, say=None):
         self.dict = {}
         for k, v in m_pattern.groupdict().items():

@@ -17,7 +17,7 @@ from mock import Mock
 from chatbot_reply import ChatbotEngine
 from chatbot_reply import NoRulesFoundError, InvalidAlternatesError
 from chatbot_reply import PatternError, PatternMethodSpecError
-from chatbot_reply import MismatchedEncodingsError
+from chatbot_reply import MismatchedEncodingsError, RecursionTooDeepError
 from chatbot_reply.reply import Target
 
 class RuleTestCase(unittest.TestCase):
@@ -168,7 +168,7 @@ class TestScript(Script):
         # lack of hash order, but I tried commenting out sorted() and it
         # triggered the assert.
         # could programatically write 10000 methods with wildcards...
-        self.assertEqual(self.ch.reply("local", unicode("hello world")), "pass")
+        self.assertEqual(self.ch.reply("local", u"hello world"), "pass")
         self.assertFalse(self.errorlogger.called)
 
     def test_LoadClearLoad_WorksWithoutComplaint(self):
@@ -185,7 +185,7 @@ class TestScript(Script):
         self.ch.load_script_directory(self.scripts_dir)        
         self.assertFalse(self.errorlogger.called)
 
-    def test_Load_RaisesPatternError_OnMalformedAlternates(self):
+    def test_Load_Raises_OnMalformedAlternates(self):
         py = """
 from chatbot_reply import Script, pattern
 class TestScript(Script):
@@ -200,6 +200,21 @@ class TestScript(Script):
                           self.ch.load_script_directory,
                           self.scripts_dir)
 
+    def test_Load_RaisesPatternError_OnBadPatternInAlternates(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    def __init__(self):
+        self.alternates = {"foo": "(hello|world]"}
+    @pattern("hello")
+    def pattern_foo(self):
+        pass
+"""
+        self.write_py(py)
+        self.assertRaises(PatternError,
+                          self.ch.load_script_directory,
+                          self.scripts_dir)
+        
 
     def test_Load_RaisesNoRulesFoundError_OnTopicNone(self):
         py = """
@@ -215,16 +230,6 @@ class TestScript(Script):
         self.assertRaises(NoRulesFoundError,
                           self.ch.load_script_directory,
                           self.scripts_dir)
-        pass
-
-    def test_Reply_Passes_MatchedText(self):
-        # wait to implement Match object, this is going to change
-        pass
-
-        
-    def test_Reply_Error_OnInfiniteRecursion(self):
-        # not yet implemented
-        pass
 
     def test_Load_RaisesOnMismatchedCodecs(self):
         py = """
@@ -241,6 +246,65 @@ class TestScript(Script):
                           self.ch.load_script_directory,
                           self.scripts_dir)
         
+
+    def test_Reply_Passes_MatchedText(self):
+        # wait to implement Match object, this is going to change
+        pass
+
+    def test_Reply_Matches_RuleWithAlternate(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    def __init__(self):
+        self.alternates = {"numbers" : "(1|3|5|7|9)"}
+    @pattern("the number is %a:numbers")
+    def pattern_number(self):
+        return "pass"
+    @pattern("*")
+    def pattern_star(self):
+        return "fail"
+"""
+        self.write_py(py)
+        self.ch.load_script_directory(self.scripts_dir)
+        self.assertEqual(self.ch.reply("local", u"The number is 5"), "pass")
+        
+
+    def test_Reply_RecursivelyExpandsRuleReplies(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    @pattern("count")
+    def pattern_foo(self):
+        return "one <count2> <count3>"
+    @pattern("count2")
+    def pattern_two(self):
+        return "two"
+    @pattern("count3")
+    def pattern_three(self):
+        return "three"    
+"""
+        self.write_py(py)
+        self.ch.load_script_directory(self.scripts_dir)
+        self.assertEqual(self.ch.reply("local", u"count"), u"one two three")
+        
+
+        
+    def test_Reply_Error_OnInfiniteRecursion(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    @pattern("one")
+    def pattern_one(self):
+        return "<two>"
+    @pattern("two")
+    def pattern_two(self):
+        return "<one>"
+"""
+        self.write_py(py)
+        self.ch.load_script_directory(self.scripts_dir)
+        self.assertRaises(RecursionTooDeepError,
+                          self.ch.reply, "local", u"one")
+
     def write_py(self, py, filename="test.py"):
         filename = os.path.join(self.scripts_dir, filename)
         with open(filename, "wb") as f:
