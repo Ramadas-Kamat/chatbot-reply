@@ -19,8 +19,13 @@ def pattern(pattern_text, previous="", weight=1):
         @wraps(func)
         def func_wrapper(self, pattern=pattern_text, previous=previous,
                          weight=weight):
-            return self.choose(func(self), name=func.__module__ + "." +
-                                                func.__name__)
+            result = func(self)
+            try:
+                return self.choose(result)
+            except Exception, e:
+                name = func.__module__ + "." + func.__name__
+                e.args += (u" in Script.choose processing return value "
+                           u"from {0}".format(name),)
         return func_wrapper
     return pattern_decorator
 
@@ -69,33 +74,27 @@ class Script(object):
         pass
 
     @staticmethod
-    def choose(args, name=""):
+    def choose(args):
         # self.choose can be a flexible thing, variable number of arguments
         # and they can be either strings or (string, weight) tuples
         # or just return either a string or a list to be fed to self.choose
-        try:
-            if args is None or not args:
-                reply = ""
-            else:
-                reply = args
-            if isinstance(args, list) and args:
-                reply = random.choice(args)
-                if isinstance(args[0], tuple):
-                    args = [(string, max(1, weight)) for string, weight in args]
-                    total = sum([weight for string, weight in args])
-                    choice = random.randrange(total)
-                    for string, weight in args:
-                        if choice < abs(weight):
-                            reply = string
-                            break
-                        else:
-                            choice -= abs(weight)
-            reply = reply.format(*[], **Script.match)
-        except Exception, e:
-            if name:
-                e.args += (u" in Script.choose processing return value "
-                           u"from {0}".format(name),)
-            raise
+        if args is None or not args:
+            reply = ""
+        else:
+            reply = args
+        if isinstance(args, list) and args:
+            reply = random.choice(args)
+            if isinstance(args[0], tuple):
+                args = [(string, max(1, weight)) for string, weight in args]
+                total = sum([weight for string, weight in args])
+                choice = random.randrange(total)
+                for string, weight in args:
+                    if choice < abs(weight):
+                        reply = string
+                        break
+                    else:
+                        choice -= abs(weight)
+        reply = reply.format(*[], **Script.match)
         return reply
 
 
