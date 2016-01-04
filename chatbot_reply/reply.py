@@ -19,7 +19,7 @@ from codecs import BOM_UTF8
 
 from .patterns import PatternParser
 from .exceptions import *
-from .script import Script, ScriptRegistrar
+from .script import Script, ScriptRegistrar, get_method_spec
 
 #todo use imp thread locking, though this thing is totally not thread-safe
 #should force lowercase be an option?
@@ -304,7 +304,7 @@ class ChatbotEngine(object):
         method = getattr(instance, attribute)
         rulename = script_class_name + "." + attribute
 
-        argspec = self._get_method_spec(rulename, method)
+        argspec = get_method_spec(rulename, method)
 
         raw_pattern, raw_previous, weight = argspec.defaults
         rule = Rule(self._pp, raw_pattern, raw_previous, weight, alternates,
@@ -323,25 +323,6 @@ class ChatbotEngine(object):
             self._say(u'Loaded pattern "{0[0]}", previous="{0[1]}", ' 
                       u'weight={1}, method={2}'.format(tup, weight,
                                                          attribute))
-
-    def _get_method_spec(self, name, method):
-        """ Check that the passed argument spec matches what we expect the
-        @pattern decorator in scripts.py to do. Raises PatternMethodSpecError
-        if a problem is found.
-        """
-        if not hasattr(method, '__call__'):
-            raise PatternMethodSpecError(
-                u"{0} begins with 'pattern' but is not callable.".format(
-                    name))
-        argspec = inspect.getargspec(method)
-        if (len(argspec.args) != 4 or
-            " ".join(argspec.args) != "self pattern previous weight" or
-            argspec.varargs is not None or
-            argspec.keywords is not None or
-            len(argspec.defaults) != 3):
-            raise PatternMethodSpecError(u"{0} was not decorated by @pattern "
-                     "or it has the wrong number of arguments.".format(name))
-        return argspec
 
     def _load_substitute(self, topic, script_class, attribute):
         pass

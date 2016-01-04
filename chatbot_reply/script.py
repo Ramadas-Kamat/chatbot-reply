@@ -6,8 +6,13 @@
 """ chatbot_reply.script, defines decorators and superclass for chatbot scripts 
 """
 #todo - Script needs a method that does string.format using the match variables
+#todo - maybe there should be a self._choose for the decorator to use,
+# so that scripters can overload self.choose?
 from functools import wraps
+import inspect
 import random
+
+from .exceptions import *
 
 def pattern(pattern_text, previous="", weight=1):
     def pattern_decorator(func):
@@ -18,14 +23,6 @@ def pattern(pattern_text, previous="", weight=1):
                                                 func.__name__)
         return func_wrapper
     return pattern_decorator
-
-def alternates(array_name):
-    def alternates_decorator(func):
-        @wraps(func)
-        def func_wrapper(self, name=array_name):
-            return func(self)
-        return func_wrapper
-    return alternates_decorator
 
 def substitutions(subs, person=False):
     def substitutions_decorator(func):
@@ -100,3 +97,26 @@ class Script(object):
                            u"from {0}".format(name),)
             raise
         return reply
+
+
+def get_method_spec(name, method):
+    """ Check that the passed argument spec matches what we expect the
+    @pattern decorator in scripts.py to do. Raises PatternMethodSpecError
+    if a problem is found. If all is good, return the argspec
+    (see inspect.getargspec)
+    """
+    if not hasattr(method, '__call__'):
+        raise PatternMethodSpecError(
+            u"{0} begins with 'pattern' but is not callable.".format(
+                name))
+    argspec = inspect.getargspec(method)
+    if (len(argspec.args) != 4 or
+        " ".join(argspec.args) != "self pattern previous weight" or
+        argspec.varargs is not None or
+        argspec.keywords is not None or
+        len(argspec.defaults) != 3):
+        raise PatternMethodSpecError(u"{0} was not decorated by @pattern "
+                 "or it has the wrong number of arguments.".format(name))
+    return argspec
+
+
