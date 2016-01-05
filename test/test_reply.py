@@ -121,56 +121,6 @@ class TestScript(Script):
                           self.ch.load_script_directory,
                           self.scripts_dir)
 
-    def test_Reply_Error_OnRuntimeErrorInRule(self):
-        py = """
-from chatbot_reply import Script, pattern
-class TestScript(Script):
-    @pattern("*")
-    def pattern_foo(self):
-        x = y
-"""
-        self.write_py(py)
-        self.ch.load_script_directory(self.scripts_dir)
-        self.assertRaises(NameError, self.ch.reply, "local", unicode("test"))
-        
-    def test_Reply_Chooses_HigherScoringRule(self):
-        py = """
-from chatbot_reply import Script, pattern
-class TestScript(Script):
-    @pattern("hello *")
-    def pattern_test1(self):
-        return "fail"
-    @pattern("* world")
-    def pattern_test2(self):
-        return "fail"
-    @pattern("* *")
-    def pattern_test3(self):
-        return "fail"
-    @pattern("*")
-    def pattern_test4(self):
-        return "fail"
-    @pattern("*~2")
-    def pattern_test5(self):
-        return "fail"
-    @pattern("_* hello")
-    def pattern_test6(self):
-        return "fail"    
-    @pattern("hello world")
-    def pattern_test7(self):
-        return "pass" 
-    @pattern("*2")
-    def pattern_test8(self):
-        return "fail"
-"""
-        self.write_py(py)
-        self.ch.load_script_directory(self.scripts_dir)
-        # this would have a 1 in 8 chance of working anyway due to the
-        # lack of hash order, but I tried commenting out sorted() and it
-        # triggered the assert.
-        # could programatically write 10000 methods with wildcards...
-        self.assertEqual(self.ch.reply("local", u"hello world"), "pass")
-        self.assertFalse(self.errorlogger.called)
-
     def test_LoadClearLoad_WorksWithoutComplaint(self):
         py = """
 from chatbot_reply import Script, pattern
@@ -248,8 +198,24 @@ class TestScript(Script):
         
 
     def test_Reply_Passes_MatchedText(self):
-        # wait to implement Match object, this is going to change
-        pass
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    @pattern("the number is _# and the word is _@")
+    def pattern_and_word(self):
+        return "results: {match0} {match1}"
+    @pattern("*", previous="results _*1 _*1")
+    def pattern_after_results(self):
+        return "again: {botmatch0} {botmatch1}"
+"""
+        self.write_py(py)
+        self.ch.load_script_directory(self.scripts_dir)
+        self.assertEqual(self.ch.reply("local",
+                                       u"The number is 5 and the word is spam"),
+                         u"results: 5 spam")
+        self.assertEqual(self.ch.reply("local", u"test"),
+                         u"again: 5 spam")
+
 
     def test_Reply_Matches_RuleWithAlternate(self):
         py = """
@@ -268,7 +234,34 @@ class TestScript(Script):
         self.ch.load_script_directory(self.scripts_dir)
         self.assertEqual(self.ch.reply("local", u"The number is 5"), "pass")
         
-
+    def test_Reply_Matches_RuleWithVariableExpansion(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    def __init__(self):
+        Script.botvars["numbers"] = "(1|3|5|7|9)"
+    @pattern("the number is %b:numbers")
+    def pattern_number(self):
+        return "pass1"
+    @pattern("the letter is %u:letters")
+    def pattern_letter(self):
+        return "pass2"
+    @pattern("set letters")
+    def pattern_set_letters(self):
+        Script.uservars["letters"] = "(x|y|z)"
+        return "ok"
+    @pattern("*")
+    def pattern_star(self):
+        return "star"
+"""
+        self.write_py(py)
+        self.ch.load_script_directory(self.scripts_dir)
+        self.assertEqual(self.ch.reply("local", u"The number is 9"), "pass1")
+        self.assertEqual(self.ch.reply("local", u"The letter is"), "star")
+        self.assertEqual(self.ch.reply("local", u"Set letters."), "ok")
+        self.assertEqual(self.ch.reply("local", u"The letter is x"), "pass2")
+        
+        
     def test_Reply_RecursivelyExpandsRuleReplies(self):
         py = """
 from chatbot_reply import Script, pattern
@@ -286,9 +279,57 @@ class TestScript(Script):
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
         self.assertEqual(self.ch.reply("local", u"count"), u"one two three")
-        
 
+    def test_Reply_Error_OnRuntimeErrorInRule(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    @pattern("*")
+    def pattern_foo(self):
+        x = y
+"""
+        self.write_py(py)
+        self.ch.load_script_directory(self.scripts_dir)
+        self.assertRaises(NameError, self.ch.reply, "local", unicode("test"))
         
+    def test_Reply_Chooses_HigherScoringRule(self):
+        py = """
+from chatbot_reply import Script, pattern
+class TestScript(Script):
+    @pattern("hello *")
+    def pattern_test1(self):
+        return "fail"
+    @pattern("* world")
+    def pattern_test2(self):
+        return "fail"
+    @pattern("* *")
+    def pattern_test3(self):
+        return "fail"
+    @pattern("*")
+    def pattern_test4(self):
+        return "fail"
+    @pattern("*~2")
+    def pattern_test5(self):
+        return "fail"
+    @pattern("_* hello")
+    def pattern_test6(self):
+        return "fail"    
+    @pattern("hello world")
+    def pattern_test7(self):
+        return "pass" 
+    @pattern("*2")
+    def pattern_test8(self):
+        return "fail"
+"""
+        self.write_py(py)
+        self.ch.load_script_directory(self.scripts_dir)
+        # this would have a 1 in 8 chance of working anyway due to the
+        # lack of hash order, but I tried commenting out sorted() and it
+        # triggered the assert.
+        # could programatically write 10000 methods with wildcards...
+        self.assertEqual(self.ch.reply("local", u"hello world"), "pass")
+        self.assertFalse(self.errorlogger.called)
+
     def test_Reply_Error_OnInfiniteRecursion(self):
         py = """
 from chatbot_reply import Script, pattern

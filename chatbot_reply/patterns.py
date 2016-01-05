@@ -5,6 +5,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """ Pattern Parsing for chatbot_reply
 """
+from __future__ import print_function
+from __future__ import unicode_literals
+
 import re
 
 from .exceptions import *
@@ -75,7 +78,7 @@ class PatternParser(object):
     
     def parse(self, pattern, simple=False):
         if isinstance(pattern, str):
-            pattern = unicode(pattern, self.encoding)
+            raise TypeError("Strings must be unicode.")
         if simple:
             tokenizer = self._alternates_tokens.tokenizer
         else:
@@ -88,16 +91,12 @@ class PatternParser(object):
     def format(self, pattern_tree):
         output = [self._format_pattern_tuple(tup) for tup in pattern_tree]
         result = "".join(output)
-        if isinstance(result, unicode):
-            result = result.decode(self.encoding)
         return result
 
     # need to wrap this in something that handles unicode correctly
     def regex(self, pattern_tree, variables):
         named_groups = [0]
         result =  self._regex(pattern_tree, named_groups, variables)
-        if isinstance(result, str):
-            result = unicode(result, self.encoding)
         return result
         
     ##### Parsing  #####
@@ -429,3 +428,52 @@ class TokenMatcherGroup(object):
     def compile_all(self):
         for m in self.all_matchers:
             m.compile()
+
+
+class Pattern(object):
+    pp = PatternParser()
+    empty_score = pp.score(pp.parse(u"*"))
+    def __init__(self, raw, alternates=None, simple=False, say=print):
+        pp = self.__class__.pp
+        self.raw = raw
+        self.alternates = alternates
+        self._say = say
+        if self.raw:
+            self._parse_tree = pp.parse(raw, simple=simple)
+            self.formatted_pattern = pp.format(self._parse_tree)
+            self.score = pp.score(self._parse_tree)
+            self.regexc = self._cache_regexc(alternates)
+        else:
+            self._parse_tree = None
+            self.formatted_pattern = ""
+            self.score = self.__class__.empty_score
+            self.regexc = None
+
+    def __len__(self):
+        return len(self.raw)
+
+    def _cache_regexc(self, alternates):
+        try:
+            regex = self.regex(alternates)
+            self._say("Formatted Pattern: {0}, regex = {1}".format(
+                self.formatted_pattern, regex))
+            return re.compile(regex, flags=re.UNICODE)
+        except PatternVariableNotFoundError:
+            self._say(u"[Pattern] Failed to cache regex for {0}.".format(
+                self.formatted_pattern))
+            return None
+
+    def regex(self, variables):
+        return self.__class__.pp.regex(self._parse_tree, variables) + "$"
+
+    def match(self, string, variables):
+        if self.regexc:
+            m = re.match(self.regexc, string)
+        else:
+            try:
+                regex = self.regex(variables)
+            except PatternVariableNotFoundError:
+                return None
+            m = re.match(regex, string, flags=re.UNICODE)
+        return m
+            

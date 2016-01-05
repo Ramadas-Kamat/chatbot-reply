@@ -6,6 +6,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """ Unit tests for Python Chatbot Reply Generator's Pattern Parser """
+from __future__ import unicode_literals
 
 from chatbot_reply import PatternParser, PatternError, PatternMethodSpecError
 
@@ -140,7 +141,7 @@ class PatternParserTestCase(unittest.TestCase):
             regex = self.pp.regex(self.pp.parse(pattern), variables) + "$"
             regexc = re.compile(regex, re.UNICODE)
             for good in p[1]:
-                match = re.match(regexc, unicode(good, 'utf-8'))
+                match = re.match(regexc, good)
                 if match is None:
                     print 'Failed to match "{0}" with "{1}" using regex "{2}"'.format(
                         pattern, good, regex)

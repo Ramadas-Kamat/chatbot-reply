@@ -5,9 +5,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """ chatbot_reply.script, defines decorators and superclass for chatbot scripts 
 """
-#todo - Script needs a method that does string.format using the match variables
-#todo - maybe there should be a self._choose for the decorator to use,
-# so that scripters can overload self.choose?
 from functools import wraps
 import inspect
 import random
@@ -70,9 +67,6 @@ class Script(object):
         cls.current_topic = new_topic
         pass
     
-    def setUp(self):
-        pass
-
     @staticmethod
     def choose(args):
         # self.choose can be a flexible thing, variable number of arguments
