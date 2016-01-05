@@ -11,8 +11,8 @@ import random
 
 from .exceptions import *
 
-def pattern(pattern_text, previous="", weight=1):
-    def pattern_decorator(func):
+def rule(pattern_text, previous="", weight=1):
+    def rule_decorator(func):
         @wraps(func)
         def func_wrapper(self, pattern=pattern_text, previous=previous,
                          weight=weight):
@@ -24,7 +24,7 @@ def pattern(pattern_text, previous="", weight=1):
                 e.args += (u" in Script.choose processing return value "
                            u"from {0}".format(name),)
         return func_wrapper
-    return pattern_decorator
+    return rule_decorator
 
 def substitutions(subs, person=False):
     def substitutions_decorator(func):
@@ -94,13 +94,13 @@ class Script(object):
 
 def get_method_spec(name, method):
     """ Check that the passed argument spec matches what we expect the
-    @pattern decorator in scripts.py to do. Raises PatternMethodSpecError
+    @rule decorator in scripts.py to do. Raises RuleMethodSpecError
     if a problem is found. If all is good, return the argspec
     (see inspect.getargspec)
     """
     if not hasattr(method, '__call__'):
-        raise PatternMethodSpecError(
-            u"{0} begins with 'pattern' but is not callable.".format(
+        raise RuleMethodSpecError(
+            u"{0} begins with 'rule' but is not callable.".format(
                 name))
     argspec = inspect.getargspec(method)
     if (len(argspec.args) != 4 or
@@ -108,7 +108,7 @@ def get_method_spec(name, method):
         argspec.varargs is not None or
         argspec.keywords is not None or
         len(argspec.defaults) != 3):
-        raise PatternMethodSpecError(u"{0} was not decorated by @pattern "
+        raise RuleMethodSpecError(u"{0} was not decorated by @rule "
                  "or it has the wrong number of arguments.".format(name))
     return argspec
 

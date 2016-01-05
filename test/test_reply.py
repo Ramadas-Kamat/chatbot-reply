@@ -16,7 +16,7 @@ from mock import Mock
 
 from chatbot_reply import ChatbotEngine
 from chatbot_reply import NoRulesFoundError, InvalidAlternatesError
-from chatbot_reply import PatternError, PatternMethodSpecError
+from chatbot_reply import PatternError, RuleMethodSpecError
 from chatbot_reply import MismatchedEncodingsError, RecursionTooDeepError
 from chatbot_reply.reply import Target
 
@@ -85,10 +85,10 @@ class TestScript(Script):
 
     def test_Load_Warning_On_DuplicateRules(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
-    @pattern("hello")
-    def pattern_foo(self):
+    @rule("hello")
+    def rule_foo(self):
         pass
 """
         self.write_py(py, filename="foo.py")
@@ -98,10 +98,10 @@ class TestScript(Script):
         
     def test_Load_RaisesPatternError_On_MalformedPattern(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
-    @pattern("(_)")
-    def pattern_foo(self):
+    @rule("(_)")
+    def rule_foo(self):
         pass
 """
         self.write_py(py)
@@ -109,24 +109,24 @@ class TestScript(Script):
                           self.ch.load_script_directory,
                           self.scripts_dir)
         
-    def test_Load_RaisesPatternMethodSpecError_On_UndecoratedMethod(self):
+    def test_Load_RaisesRuleMethodSpecError_On_UndecoratedMethod(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
-    def pattern_foo(self):
+    def rule_foo(self):
         pass
 """
         self.write_py(py)
-        self.assertRaises(PatternMethodSpecError,
+        self.assertRaises(RuleMethodSpecError,
                           self.ch.load_script_directory,
                           self.scripts_dir)
 
     def test_LoadClearLoad_WorksWithoutComplaint(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
-    @pattern("hello")
-    def pattern_foo(self):
+    @rule("hello")
+    def rule_foo(self):
         pass
 """
         self.write_py(py)
@@ -137,12 +137,12 @@ class TestScript(Script):
 
     def test_Load_Raises_OnMalformedAlternates(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
     def __init__(self):
         self.alternates = "(hello|world)"
-    @pattern("hello")
-    def pattern_foo(self):
+    @rule("hello")
+    def rule_foo(self):
         pass
 """
         self.write_py(py)
@@ -152,12 +152,12 @@ class TestScript(Script):
 
     def test_Load_RaisesPatternError_OnBadPatternInAlternates(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
     def __init__(self):
         self.alternates = {"foo": "(hello|world]"}
-    @pattern("hello")
-    def pattern_foo(self):
+    @rule("hello")
+    def rule_foo(self):
         pass
 """
         self.write_py(py)
@@ -168,12 +168,12 @@ class TestScript(Script):
 
     def test_Load_RaisesNoRulesFoundError_OnTopicNone(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
     def __init__(self):
         self.topic = None
-    @pattern("hello")
-    def pattern_foo(self):
+    @rule("hello")
+    def rule_foo(self):
         pass
 """
         self.write_py(py)
@@ -183,10 +183,10 @@ class TestScript(Script):
 
     def test_Load_RaisesOnMismatchedCodecs(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
-    @pattern("hello")
-    def pattern_foo(self):
+    @rule("hello")
+    def rule_foo(self):
         pass
 """
         self.write_py(py, filename="foo.py")
@@ -199,13 +199,13 @@ class TestScript(Script):
 
     def test_Reply_Passes_MatchedText(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
-    @pattern("the number is _# and the word is _@")
-    def pattern_and_word(self):
+    @rule("the number is _# and the word is _@")
+    def rule_and_word(self):
         return "results: {match0} {match1}"
-    @pattern("*", previous="results _*1 _*1")
-    def pattern_after_results(self):
+    @rule("*", previous="results _*1 _*1")
+    def rule_after_results(self):
         return "again: {botmatch0} {botmatch1}"
 """
         self.write_py(py)
@@ -219,15 +219,15 @@ class TestScript(Script):
 
     def test_Reply_Matches_RuleWithAlternate(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
     def __init__(self):
         self.alternates = {"numbers" : "(1|3|5|7|9)"}
-    @pattern("the number is %a:numbers")
-    def pattern_number(self):
+    @rule("the number is %a:numbers")
+    def rule_number(self):
         return "pass"
-    @pattern("*")
-    def pattern_star(self):
+    @rule("*")
+    def rule_star(self):
         return "fail"
 """
         self.write_py(py)
@@ -236,22 +236,22 @@ class TestScript(Script):
         
     def test_Reply_Matches_RuleWithVariableExpansion(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
     def __init__(self):
         Script.botvars["numbers"] = "(1|3|5|7|9)"
-    @pattern("the number is %b:numbers")
-    def pattern_number(self):
+    @rule("the number is %b:numbers")
+    def rule_number(self):
         return "pass1"
-    @pattern("the letter is %u:letters")
-    def pattern_letter(self):
+    @rule("the letter is %u:letters")
+    def rule_letter(self):
         return "pass2"
-    @pattern("set letters")
-    def pattern_set_letters(self):
+    @rule("set letters")
+    def rule_set_letters(self):
         Script.uservars["letters"] = "(x|y|z)"
         return "ok"
-    @pattern("*")
-    def pattern_star(self):
+    @rule("*")
+    def rule_star(self):
         return "star"
 """
         self.write_py(py)
@@ -264,16 +264,16 @@ class TestScript(Script):
         
     def test_Reply_RecursivelyExpandsRuleReplies(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
-    @pattern("count")
-    def pattern_foo(self):
+    @rule("count")
+    def rule_foo(self):
         return "one <count2> <count3>"
-    @pattern("count2")
-    def pattern_two(self):
+    @rule("count2")
+    def rule_two(self):
         return "two"
-    @pattern("count3")
-    def pattern_three(self):
+    @rule("count3")
+    def rule_three(self):
         return "three"    
 """
         self.write_py(py)
@@ -282,10 +282,10 @@ class TestScript(Script):
 
     def test_Reply_Error_OnRuntimeErrorInRule(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
-    @pattern("*")
-    def pattern_foo(self):
+    @rule("*")
+    def rule_foo(self):
         x = y
 """
         self.write_py(py)
@@ -294,31 +294,31 @@ class TestScript(Script):
         
     def test_Reply_Chooses_HigherScoringRule(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
-    @pattern("hello *")
-    def pattern_test1(self):
+    @rule("hello *")
+    def rule_test1(self):
         return "fail"
-    @pattern("* world")
-    def pattern_test2(self):
+    @rule("* world")
+    def rule_test2(self):
         return "fail"
-    @pattern("* *")
-    def pattern_test3(self):
+    @rule("* *")
+    def rule_test3(self):
         return "fail"
-    @pattern("*")
-    def pattern_test4(self):
+    @rule("*")
+    def rule_test4(self):
         return "fail"
-    @pattern("*~2")
-    def pattern_test5(self):
+    @rule("*~2")
+    def rule_test5(self):
         return "fail"
-    @pattern("_* hello")
-    def pattern_test6(self):
+    @rule("_* hello")
+    def rule_test6(self):
         return "fail"    
-    @pattern("hello world")
-    def pattern_test7(self):
+    @rule("hello world")
+    def rule_test7(self):
         return "pass" 
-    @pattern("*2")
-    def pattern_test8(self):
+    @rule("*2")
+    def rule_test8(self):
         return "fail"
 """
         self.write_py(py)
@@ -332,13 +332,13 @@ class TestScript(Script):
 
     def test_Reply_Error_OnInfiniteRecursion(self):
         py = """
-from chatbot_reply import Script, pattern
+from chatbot_reply import Script, rule
 class TestScript(Script):
-    @pattern("one")
-    def pattern_one(self):
+    @rule("one")
+    def rule_one(self):
         return "<two>"
-    @pattern("two")
-    def pattern_two(self):
+    @rule("two")
+    def rule_two(self):
         return "<one>"
 """
         self.write_py(py)

@@ -8,7 +8,7 @@
 """ Unit tests for Python Chatbot Reply Generator's Pattern Parser """
 from __future__ import unicode_literals
 
-from chatbot_reply import PatternParser, PatternError, PatternMethodSpecError
+from chatbot_reply import PatternParser, PatternError
 
 import re
 import sys

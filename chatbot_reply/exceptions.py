@@ -22,7 +22,7 @@ class NoRulesFoundError(Exception):
     decorated by @pattern in any classes derived from Script in any .py files
     in a directory. """
     pass
-class PatternMethodSpecError(Exception):
+class RuleMethodSpecError(Exception):
     """ Raised when ChatbotReply.load_script_directory finds a method whose name
     begins with 'pattern' but which does not appear to have been decorated with
     @pattern.

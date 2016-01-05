@@ -25,10 +25,8 @@ from .script import Script, ScriptRegistrar, get_method_spec
 #todo use imp thread locking, though this thing is totally not thread-safe
 #should force lowercase be an option?
 # the topic database should be its own class
-# dict subclass that makes everything be unicode
-# Script.alternates should use that
 # need a class for variable dictionaries
-
+# warning if script sets Script.uservars in init
 
 class ChatbotEngine(object):
     """ Python Chatbot Reply Generator
@@ -264,8 +262,8 @@ class ChatbotEngine(object):
             if tup in self._topics[topic].rules:
                 existing_rule = self._topics[topic].rules[tup]
                 if rule.method != existing_rule.method:
-                    self._say(u'Ignoring pattern "{0[0]}","{0[1]}" at {1} '
-                          u'because it is a duplicate of the pattern of {2} '
+                    self._say(u'Ignoring rule "{0[0]}","{0[1]}" at {1} '
+                          u'because it is a duplicate of the rule {2} '
                           u'for the topic "{3}".'.format(tup,
                               rule.rulename, existing_rule.rulename, topic),
                           warning = "Warning")
@@ -302,9 +300,9 @@ class ChatbotEngine(object):
                                                    script_class_name)
         rules = []
         for attribute in dir(instance):
-            if attribute.startswith('pattern'):
-                rule = self._load_rule(topic, script_class_name, instance, attribute,
-                          alternates)
+            if attribute.startswith('rule'):
+                rule = self._load_rule(topic, script_class_name, instance,
+                                       attribute, alternates)
                 rules.append(rule)
         return topic, rules
 
@@ -373,8 +371,6 @@ class ChatbotEngine(object):
         Exceptions:
         RecursionTooDeepError -- if recursion goes over depth limit passed
             to __init__
-        PatternVariableNotFoundError -- if a pattern references a user or bot 
-            variable that is not defined
         """
         self.sort_rules()
         self._say(u'Asked to reply to: "{0}" from {1}'.format(message, user))
@@ -398,7 +394,7 @@ class ChatbotEngine(object):
         for rule in self._topics["all"].sortedrules:
             m = rule.match(target, self._history, self._variables)
             if m is not None:
-                self._say(u"Found pattern match, rule {0}".format(
+                self._say(u"Found match, rule {0}".format(
                     rule.rulename))
                 Script.match = m.dict
                 reply = rule.method()
@@ -464,7 +460,7 @@ class Topic(object):
 class Rule(object):
     """ Pattern matching and response rule.
 
-    Describes one method decorated by @pattern. Parses
+    Describes one method decorated by @rule. Parses
     the simplified regular expression strings, raising PatternError
     if there is an error. Can match the pattern and previous_pattern
     against tokenized input (a Target) and return a Match object.
@@ -472,7 +468,7 @@ class Rule(object):
     Public instance variables:
     pattern - the Pattern object to match against the current message
     previous - the Pattern object to match against the previous reply
-    weight - the weight, given to @pattern
+    weight - the weight, given to @rule
     method - a reference to the decorated method
     rulename - classname.methodname, for error messages
 
@@ -485,15 +481,15 @@ class Rule(object):
     def __init__(self, raw_pattern, raw_previous, weight, alternates,
                  method, rulename, say=print):
         """ Create a new Rule object based on information supplied to the
-        @pattern decorator. Arguments:
+        @rule decorator. Arguments:
         raw_pattern - simplified regular expression string (not necessarily 
-                      unicode) supplied to @pattern
+                      unicode) supplied to @rule
         raw_previous - simplified regular expression string (not necessarily 
-                      unicode)supplied to @pattern
-        weight -  weight supplied to @pattern
+                      unicode)supplied to @rule
+        weight -  weight supplied to @rule
         alternates - dictionary of variable names and values that can
                    be substituted in the patterns by PatternParser
-        method - reference to method decorated by @pattern
+        method - reference to method decorated by @rule
         rulename - modulename.classname.methodname, used to make better
                  error messages
         say - a function that takes a string, for debug output. Or None.

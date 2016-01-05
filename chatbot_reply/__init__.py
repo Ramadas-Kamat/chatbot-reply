@@ -4,14 +4,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from exceptions import PatternError, PatternVariableNotFoundError, PatternMethodSpecError
+from exceptions import PatternError, RuleMethodSpecError
 from exceptions import NoRulesFoundError, RecursionTooDeepError, InvalidAlternatesError
 from exceptions import MismatchedEncodingsError
 from patterns import PatternParser
-from script import pattern, Script
+from script import rule, Script
 from reply import ChatbotEngine
 
-__all__      = ["ChatbotEngine", "Script", "pattern",
+__all__      = ["ChatbotEngine", "Script", "rule", "RuleMethodSpecError",
                 "PatternParser", "PatternError", "PatternVariableNotFoundError",
                 "NoRulesFoundError", "RecursionTooDeepError",
                 "InvalidAlternatesError", "MismatchedEncodingsError"
