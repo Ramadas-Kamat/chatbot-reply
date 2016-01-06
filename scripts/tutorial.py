@@ -1,10 +1,10 @@
 #Any copyright is dedicated to the Public Domain.
 #http://creativecommons.org/publicdomain/zero/1.0/
-
+from __future__ import unicode_literals
 from chatbot_reply import Script, rule
 
 class TutorialScript(Script):
-    def __init__(self):
+    def setup(self):
         self.alternates = {"colors": "(red|yellow|orange|green|blue|violet)"}
         
     @rule("hello robot")
@@ -79,7 +79,7 @@ class TutorialScript(Script):
     def rule_what_is_your_alt_opt_number(self):
         return "You can reach me at: 1 (800) 555-1234."
 
-    @rule("I have a [red|green|blue] car")
+    @rule("i have a [red|green|blue] car")
     def rule_i_have_a_optalt_car(self):
         return "I bet you like your car a lot."
 
@@ -91,9 +91,9 @@ class TutorialScript(Script):
     def rule_what_color_is_my_alt_star(self):
         return "According to you, your {match1} is {match0}."
 
-    @rule("my * is _%a:colors")
+    @rule("my _* is _%a:colors")
     def rule_my_star_is_arrcolors(self):
-        return "I've always wanted a {match1} {match0}"
+        return "I've always wanted a {match1} {match0}."
 
     @rule("google _*", weight=10)
     def rule_google_star(self):
@@ -113,15 +113,15 @@ class TutorialScript(Script):
 
     @rule("my name is _*~3")
     def rule_my_name_is_star(self):
-        Script.uservars["name"] = Script.match[0] # some equivalent of formal, or maybe raw input
+        self.uservars["name"] = self.match["match0"]
         return "It's nice to meet you, {match0}."
 
     @rule("what is my name")
     def rule_what_is_my_name(self):
-        if "name" not in Script.uservars:
+        if "name" not in self.uservars:
             return "You never told me your name."
         else:
-            return ["Your name is {0}.".format(Script.uservars["name"]),
-                    "You told me your name is {0}.".format(Script.uservars["name"])]
+            return ["Your name is {0}.".format(self.uservars["name"]),
+                    "You told me your name is {0}.".format(self.uservars["name"])]
 
     

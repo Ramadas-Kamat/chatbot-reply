@@ -1,34 +1,34 @@
 #Any copyright is dedicated to the Public Domain.
 #http://creativecommons.org/publicdomain/zero/1.0/
-
+from __future__ import unicode_literals
 from chatbot_reply import Script, rule
 
 class HokeyPokeyScript(Script):
-    def __init__(self):
-        Script.botvars["mood"] = "good"
-        Script.botvars["bodypart"] = "right foot"
-        Script.botvars["danced"] = False
+    def setup(self):
+        self.botvars["mood"] = "good"
+        self.botvars["bodypart"] = "right foot"
+        self.botvars["danced"] = False
         self.bodyparts = ['right foot', 'left foot', 'right arm',
                                        'left arm', 'whole self']
 
     @rule("how are you doing")
     def rule_how_are_you_doing(self):
-        mood = Script.botvars["mood"]
+        mood = self.botvars["mood"]
         return "I'm in a {0} mood.".format(mood)
 
     @rule("get grumpy")
     def rule_get_grumpy(self):
-        Script.botvars["mood"] = "bad"
+        self.botvars["mood"] = "bad"
         return "Now I'm grouchy."
 
     @rule("get happy")
     def rule_get_happy(self):
-        Script.botvars["mood"] = "good"
+        self.botvars["mood"] = "good"
         return "I feel much better."
 
     @rule("hey [there]")
     def rule_hey_opt(self):
-        if Script.botvars["mood"] == "good":
+        if self.botvars["mood"] == "good":
             return "<hello>"
         else:
             return "Hay is for horses."
@@ -56,34 +56,34 @@ class HokeyPokeyScript(Script):
 
     @rule("where are you in the dance")
     def rule_where_are_you_in_the_dance(self):
-        return "I'm about to use my {0}.".format(Script.botvars["bodypart"])
+        return "I'm about to use my {0}.".format(self.botvars["bodypart"])
 
     @rule("back to the right foot")
     def rule_back_to_the_right_foot(self):
-        Script.botvars["bodypart"] = "right foot"
+        self.botvars["bodypart"] = "right foot"
         return "OK, I'm back on the right foot."
 
     @rule("what would the next one be")
     def rule_what_would_the_next_one_be(self):
-        next_part = self.next_body_part(Script.botvars["bodypart"])
-        return "After {0} comes {1}.".format(Script.botvars["bodypart"],
+        next_part = self.next_body_part(self.botvars["bodypart"])
+        return "After {0} comes {1}.".format(self.botvars["bodypart"],
                                             next_part)
 
     @rule("skip to the next one")
     def rule_skip_to_the_next_one(self):
-        Script.botvars["bodypart"] = self.next_body_part(Script.botvars["bodypart"])
-        return "OK, when I dance I'll use my {0}.".format(Script.botvars["bodypart"])
+        self.botvars["bodypart"] = self.next_body_part(self.botvars["bodypart"])
+        return "OK, when I dance I'll use my {0}.".format(self.botvars["bodypart"])
 
     @rule("do the hokey pokey")
     def rule_do_the_hokey_pokey(self):
-        Script.botvars["danced"] = True
-        bodypart = Script.botvars["bodypart"]
-        Script.botvars["bodypart"] = self.next_body_part(bodypart)
+        self.botvars["danced"] = True
+        bodypart = self.botvars["bodypart"]
+        self.botvars["bodypart"] = self.next_body_part(bodypart)
         return "<put your {0} in>".format(bodypart)
     
     @rule("(have you done|did you do) the hokey pokey")
     def rule_have_you_done_the_hokey_pokey(self):
-        if Script.botvars["danced"]:
+        if self.botvars["danced"]:
             return "Yes!"
         else:
             return "No, but I'd like to!"

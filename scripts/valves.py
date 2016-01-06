@@ -1,16 +1,24 @@
 #Any copyright is dedicated to the Public Domain.
 #http://creativecommons.org/publicdomain/zero/1.0/
-
+from __future__ import unicode_literals
 from chatbot_reply import Script, rule
 
 class ValveScript(Script):
 
-    def __init__(self):
+    def setup(self):
         self.alternates = {}
-        self.alternates["mainvalve"] = "((shutoff|shut off|main|main water|city water) valve)"
+        self.alternates["mainvalve"] = \
+            "((shutoff|shut off|main|main water|city water) valve)"
         self.alternates["drainvalve"] = "([water] drain valve)"
-        self.alternates["anyvalve"] = "({0}|{1})".format(self.alternates["mainvalve"],
-                                                         self.alternates["drainvalve"])
+        self.alternates["anyvalve"] = \
+            "({0}|{1})".format(self.alternates["mainvalve"],
+                               self.alternates["drainvalve"])
+
+    def setup_user(self, user):
+        self.uservars["mainvalvestatus"] = "open"
+        self.uservars["drainvalvestatus"] = "closed"
+        self.uservars["leaksensorstatus"] = "dry"
+
 
     @rule("status")
     def rule_status(self):
@@ -119,39 +127,34 @@ class ValveScript(Script):
     def rule_water_sensor_status(self):
         return "The water leak sensor is {0}".format(self.leaksensorstatus())
 
-    @rule("setup test")
-    def rule_setup_test(self):
-        Script.uservars["mainvalvestatus"] = "open"
-        Script.uservars["drainvalvestatus"] = "closed"
-        Script.uservars["leaksensorstatus"] = "dry"
 
     @rule("sensor wet")
     def rule_sensor_wet(self):
-        Script.uservars["leaksensorstatus"] = "wet"        
+        self.uservars["leaksensorstatus"] = "wet"        
 
     @rule("sensor dry")
     def rule_sensor_dry(self):
-        Script.uservars["leaksensorstatus"] = "dry"
+        self.uservars["leaksensorstatus"] = "dry"
 
     def mainvalvestatus(self):
-        return Script.uservars["mainvalvestatus"]
+        return self.uservars["mainvalvestatus"]
 
     def drainvalvestatus(self):
-        return Script.uservars["drainvalvestatus"]        
+        return self.uservars["drainvalvestatus"]        
 
     def tellmainvalve(self, todo):
         if todo == "close":
             newstate = "closed"
         else:
             newstate = "open"
-        Script.uservars["mainvalvestatus"] = newstate
+        self.uservars["mainvalvestatus"] = newstate
 
     def telldrainvalve(self, todo):
         if todo == "close":
             newstate = "closed"
         else:
             newstate = "open"
-        Script.uservars["drainvalvestatus"] = newstate
+        self.uservars["drainvalvestatus"] = newstate
         
     def leaksensorstatus(self):
-        return Script.uservars["leaksensorstatus"]
+        return self.uservars["leaksensorstatus"]

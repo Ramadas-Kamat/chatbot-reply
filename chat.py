@@ -5,6 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """ Example use of chatbot_reply module, simple interactive mode """
 from __future__ import print_function
+from __future__ import unicode_literals
 from chatbot_reply import ChatbotEngine
 
 if __name__ == "__main__":
@@ -18,19 +19,19 @@ if __name__ == "__main__":
         if msg == "/quit":
             break
         elif msg == "/botvars":
-            print(unicode(ch._botvars))
+            print(unicode(ch.botvars))
         elif msg == "/uservars":
-            if "local" in ch._uservars:
-                print(unicode(ch._uservars["local"]))
+            if "local" in ch.users:
+                print(unicode(ch.users["local"].vars))
             else:
                 print("No user variables have been defined.")
         elif msg == "/reload":
             ch.clear_rules()
             ch.load_script_directory("scripts")
         elif msg == "/debug":
-            if ch._botvars["debug"] == "True":
-                ch._botvars["debug"] = "False"
+            if ch.botvars["debug"] == "True":
+                ch.botvars["debug"] = "False"
             else:
-                ch._botvars["debug"] = "True"
+                ch.botvars["debug"] = "True"
         else:
             print("Bot> " + ch.reply("local", unicode(msg, 'utf-8')))

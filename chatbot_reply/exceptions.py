@@ -37,9 +37,5 @@ class InvalidAlternatesError(Exception):
     derived from Script puts something other than a dictionary in 
     self.alternates. """
     pass
-class MismatchedEncodingsError(Exception):
-    """ Raised by ChatbotEngine.load_script_directory when it encounters
-    more than one unicode encoding when reading script files """
-    pass
 
 

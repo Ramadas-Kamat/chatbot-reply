@@ -14,30 +14,20 @@ from .exceptions import *
 
 # TODO - could pass in a string such as "uba" with variable classes to create
 # TODO - replace all those tuples in the parse tree with class instances
-# TODO - add a wrapper for re.match that gets the unicode right
-# TODO - make the exception classes handle unicode to str conversion
-# TODO - unicode literals wouuld probably work here
 
 class StopScanLoop(StopIteration):
     pass
 
 class PatternParser(object):
     """ Pattern Parser class for simplified regular expression patterns.
-        public instance variable : encoding
     """
     
 
     def __init__(self):
         """ Create a PatternParser object. All the internal work with regular
-        expressions is done using unicode strings. If you pass in str's, they
-        will be converted to unicode using the encoding keyword parameter,
-        which defaults to utf-8.
-
-        That being said, the output of PatternParser.regex isn't going to work
-        on str's containing special characters unless you convert them to unicode
-        and use re.UNICODE.
+        expressions is done using unicode strings. If you pass in str's, a 
+        TypeError will be raised. 
         """
-        self.encoding = "utf-8"
         
         self._every_token = TokenMatcher()
         self._alternates_tokens = TokenMatcher()
@@ -77,7 +67,7 @@ class PatternParser(object):
     ##### The public methods #####
     
     def parse(self, pattern, simple=False):
-        if isinstance(pattern, str):
+        if not isinstance(pattern, unicode):
             raise TypeError("Strings must be unicode.")
         if simple:
             tokenizer = self._alternates_tokens.tokenizer
@@ -93,7 +83,6 @@ class PatternParser(object):
         result = "".join(output)
         return result
 
-    # need to wrap this in something that handles unicode correctly
     def regex(self, pattern_tree, variables):
         named_groups = [0]
         result =  self._regex(pattern_tree, named_groups, variables)
@@ -202,9 +191,9 @@ class PatternParser(object):
                 minimum = maximum = groups[0]
             if groups[1]: #they gave us a ~
                 maximum = groups[2]
-            minimum = str(max(int(minimum), 1))
+            minimum = unicode(max(int(minimum), 1))
             if maximum:
-                maximum = str(max(int(maximum), int(minimum)))
+                maximum = unicode(max(int(maximum), int(minimum)))
             parsetree.append((code, (wildcard_type, minimum, maximum)))
 
         def format(self, outerself, code, data):
@@ -235,9 +224,9 @@ class PatternParser(object):
                 # we are going to try to match n-1 repetitions of the pattern
                 # followed by a space plus 1 rep of the pattern followed by a
                 # \b
-                minimum = str(int(minimum) - 1)
+                minimum = unicode(int(minimum) - 1)
                 if maximum != "":
-                    maximum = str(int(maximum) - 1)
+                    maximum = unicode(int(maximum) - 1)
                 return (r"(" + wildcard + r"\s)" +
                         r"{" + minimum + r"," + maximum + r"}?"
                         + wildcard + r"\b")
@@ -274,7 +263,7 @@ class PatternParser(object):
             return outerself._score_tuple(data)
 
         def regex(self, outerself, code, data, named_groups, variables):
-            regex = u"(?P<match{0}>{1})".format(
+            regex = "(?P<match{0}>{1})".format(
                 named_groups[0],
                 outerself._regex_pattern_tuple(data, named_groups, variables))
             named_groups[0] += 1
@@ -311,15 +300,13 @@ class PatternParser(object):
         def regex(self, outerself, code, data, named_groups, variables):
             if data[0] not in variables or data[1] not in variables[data[0]]:
                 raise PatternVariableNotFoundError(
-                    u"Chatbot variable %{0}:{1} not found".format(data[0],
+                    "Chatbot variable %{0}:{1} not found".format(data[0],
                                                                  data[1]))
             value = variables[data[0]][data[1]]
-            if isinstance(value, str):
-                value = unicode(value, outerself.encoding)
             if not isinstance(value, unicode):
                 raise PatternVariableValueError(
-                    u"Value in pattern variable %{0}:{1} "
-                    "could not be used because it is not a string.".format(
+                    "Value in pattern variable %{0}:{1} could not be used "
+                    "because it is not a unicode string.".format(
                         data[0], data[1]))
             value = value.lower()
             try:
@@ -328,7 +315,7 @@ class PatternParser(object):
                                       outerself._variables_tokens.tokenizer))
                 regex = outerself.regex(parse_tree, None)
             except PatternError as e:
-                e.args += (u" in variable %{0}:{1}".format(data[0], data[1]),)
+                e.args += (" in variable %{0}:{1}".format(data[0], data[1]),)
                 raise
 
             return regex + r"\b"
@@ -384,7 +371,7 @@ class PatternParser(object):
 
     class Invalid(Token):
         def parse(self, outerself, tokens, parsetree, code, text, terminator):
-            raise PatternError(u"Found an unexpected character {0}".format(text))
+            raise PatternError("Found an unexpected character {0}".format(text))
 
  
 class TokenMatcher(object):
@@ -432,7 +419,7 @@ class TokenMatcherGroup(object):
 
 class Pattern(object):
     pp = PatternParser()
-    empty_score = pp.score(pp.parse(u"*"))
+    empty_score = pp.score(pp.parse("*"))
     def __init__(self, raw, alternates=None, simple=False, say=print):
         pp = self.__class__.pp
         self.raw = raw
@@ -459,7 +446,7 @@ class Pattern(object):
                 self.formatted_pattern, regex))
             return re.compile(regex, flags=re.UNICODE)
         except PatternVariableNotFoundError:
-            self._say(u"[Pattern] Failed to cache regex for {0}.".format(
+            self._say("[Pattern] Failed to cache regex for {0}.".format(
                 self.formatted_pattern))
             return None
 

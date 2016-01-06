@@ -7,26 +7,21 @@
 """Chatbot Reply Generator
 
 """
-
 from __future__ import print_function
-import collections
-import imp
-import inspect
-import os
+from __future__ import unicode_literals
 import re
-import traceback
-
-from codecs import BOM_UTF8
 
 from .patterns import Pattern
+from .rules import Rule, RulesDB
+from .script import Script
 from .exceptions import *
-from .script import Script, ScriptRegistrar, get_method_spec
 
 #todo use imp thread locking, though this thing is totally not thread-safe
 #should force lowercase be an option?
 # the topic database should be its own class
 # need a class for variable dictionaries
 # warning if script sets Script.uservars in init
+# History needs to be per user. Put it in user variables?
 
 class ChatbotEngine(object):
     """ Python Chatbot Reply Generator
@@ -37,8 +32,6 @@ class ChatbotEngine(object):
     for each user conversing with the chatbot. Matches user input to its 
     database of patterns to select a reply rule, which may recursively reference
     other reply patterns and rules.
-
-    How script loading works. How multiple instances of Chatbot have to share.
 
     Public class methods:
     load_scripts
@@ -77,21 +70,24 @@ class ChatbotEngine(object):
         self._debuglogger = debuglogger
         self._errorlogger = errorlogger
         self._depth_limit = depth
+
+        self.botvars = {}
+        self.botvars["debug"] = unicode(debug)
+        Script.botvars = self.botvars
         
-        self._PREFIX = "___" # added to script module names to avoid 
-                                  # namespace conflicts
-
-        self._variables = {u"b" : DecodedDict(None),
-                           u"u" : None}
-        self._variables[u"b"][u"debug"] = unicode(debug)
-        self._uservars = {} 
-
-        self._history = History(10)
+        self._variables = {"b" : self.botvars,
+                           "u" : None}
+        
+        self.users = {}
         self.clear_rules()
-
-        self._encoding = None
         
         self._say("Chatbot instance created.")
+
+    def clear_rules(self):
+        self.rules_db = RulesDB(self._say)
+
+    def load_script_directory(self, directory):
+        self.rules_db.load_script_directory(directory, self.botvars)
 
 
     def _say(self, message, warning=""):
@@ -101,266 +97,13 @@ class ChatbotEngine(object):
         """
         if warning:
             if self._errorlogger:
-                self._errorlogger(u"[Chatbot {0}] {1}".format(warning,
+                self._errorlogger("[Chatbot {0}] {1}".format(warning,
                                                              message))
-        elif (self._variables["b"].get(u"debug", "False") == "True"
+        elif (self._variables["b"].get("debug", "False") == "True"
               and self._debuglogger):
-            self._debuglogger(u"[Chatbot] {0}".format(message))
+            self._debuglogger("[Chatbot] {0}".format(message))
 
     ##### Reading scripts and building the database of rules #####
-
-    def clear_rules(self):
-        """ Make a fresh new empty rules database. """
-        self._topics = {}
-        self._new_topic("all")
-        self._encoding = None
-        
-    def _new_topic(self, topic):
-        """ Add a new topic to the rules database. """
-        self._topics[topic] = Topic()
- 
-    
-    def load_script_directory(self, directory):
-        """Iterate through the .py files in a directory, and import all of
-        them. Then look for subclasses of Script and search them for
-        rules, and load those into self._topics.
-
-        """
-        self.rules_sorted = False
-        ScriptRegistrar.clear()
-        Script.botvars = self._variables['b']
-        
-        for item in os.listdir(directory):
-            if item.lower().endswith(".py"):
-                self._say("Importing " + item)
-                filename = os.path.join(directory, item)
-                self._import(filename)
-
-        for cls in ScriptRegistrar.registry:
-            self._say("Loading scripts from" + cls.__name__)
-            self._load_script(cls)
-
-        if sum([len(t.rules) for k, t in self._topics.items()]) == 0:
-            raise NoRulesFoundError(
-                u"No rules were found in {0}/*.py".format(directory))
-                
-    def _import(self, filename):
-        """Import a python module, given the filename, but to avoid creating
-        namespace conflicts give the module a name consisting of
-        _PREFIX + filename (minus any extension). Also check that the 
-        source file encoding doesn't conflict with anything we've already
-        loaded.
-
-        """
-        path, name = os.path.split(filename)
-        name, ext = os.path.splitext(name)
-
-        self._say("Reading " + filename)
-        modname = self._PREFIX + name
-        file, filename, data = imp.find_module(name, [path])
-        mod = imp.load_module(modname, file, filename, data)
-        self._check_encodings(filename)
-        return mod
-
-    def _check_encodings(self, filename):
-        """Given the filename of a Python source file, that's already been
-        successfully imported by the interpreter, determine its
-        source encoding by reading the first two lines and looking for
-        either the BOM_UTF8 or the encoding cookie comment. If it
-        doesn't match the encoding of any file we've previously read
-        raise a MismatchedEncodingsError, otherwise remember it to
-        check against the next file.
-
-        """
-        with open(filename, "r") as f:
-            encoding = self._detect_encoding(f.readline)
-        if self._encoding == None:
-            self._change_encoding(encoding)
-            self._encoding_filename = filename
-        elif encoding != self._encoding:
-            raise MismatchedEncodingsError(
-                u"All script files must use the same source encoding. "
-                u"{0} is using {1} and {2} is using {3}.".format(
-                    self._encoding_filename, self._encoding, filename, encoding))
-
-    def _detect_encoding(self, readline):
-        """Detect the encoding that is used in a Python source file. Based on
-        tokenize.py from Python 3.2, simplified a bit because we can
-        assume there are no errors, because the file already was
-        successfully loaded by the Python interpreter.
-
-        It will call readline a maximum of twice, and return the
-        encoding used (as a string).
-
-        It detects the encoding from the presence of a utf-8 bom or an
-        encoding cookie as specified in pep-0263. If none is found, it
-        will return utf-8.
-
-        """
-        default = 'utf-8'
-        def read_or_stop():
-            try:
-                return readline()
-            except StopIteration:
-                return ""
-
-        def find_cookie(line):
-            # Decode as UTF-8. Either the line is an encoding declaration,
-            # in which case it should be pure ASCII, or it must be UTF-8
-            # per default encoding.
-            line_string = line.decode('utf-8')
-            matches = re.findall("coding[:=]\s*([-\w.]+)", line_string)
-            if not matches:
-                return None
-            encoding = get_normal_name(matches[0])
-            return encoding
-
-        def get_normal_name(orig_enc):
-            # Only care about the first 12 characters.
-            enc = orig_enc[:12].lower().replace("_", "-")
-            if enc == "utf-8" or enc.startswith("utf-8-"):
-                return "utf-8"
-            if enc in ("latin-1", "iso-8859-1", "iso-latin-1") or \
-               enc.startswith(("latin-1-", "iso-8859-1-", "iso-latin-1-")):
-                return "iso-8859-1"
-            return orig_enc
-
-        first = read_or_stop()
-        if not first or first.startswith(BOM_UTF8):
-            return default
-
-        encoding = find_cookie(first)
-        if encoding:
-            return encoding
-
-        second = read_or_stop()
-        if not second:
-            return default
-
-        encoding = find_cookie(second)
-        if encoding:
-            return encoding
-
-        return default
-
-    def _change_encoding(self, encoding):
-        self._encoding = encoding
-        self._variables["b"].encoding = self._encoding
-        for k, dd in self._uservars:
-            dd.encoding = self._encoding
-
-    def _load_script(self, script_class):
-        topic, rules = self._load_script_class(script_class)
-        if topic == None:
-            return
-        if topic not in self._topics:
-            self._new_topic(topic)
-
-        for rule in rules:
-            tup = (rule.pattern.formatted_pattern,
-                   rule.previous.formatted_pattern)
-            if tup in self._topics[topic].rules:
-                existing_rule = self._topics[topic].rules[tup]
-                if rule.method != existing_rule.method:
-                    self._say(u'Ignoring rule "{0[0]}","{0[1]}" at {1} '
-                          u'because it is a duplicate of the rule {2} '
-                          u'for the topic "{3}".'.format(tup,
-                              rule.rulename, existing_rule.rulename, topic),
-                          warning = "Warning")
-            else:
-                self._topics[topic].rules[tup] = rule
-                self._say(u'Loaded pattern "{0[0]}", previous="{0[1]}", ' 
-                          u'weight={1}, method={2}'.format(tup, rule.weight,
-                                                           rule.rulename))
-           
-
-    def _load_script_class(self, script_class):
-        """Given a subclass of Script, create an instance of it,
-        find all of its methods which begin with one of our keywords
-        and add them to the rules database for the topic of the 
-        script instance.
-
-        If the instance defines an alternates dictionary, substitute
-        those into the patterns of the rules.
-
-        """
-        instance = script_class()
-        script_class_name = (instance.__module__[len(self._PREFIX):] + "." +
-                             instance.__class__.__name__)
-        
-        topic = instance.topic
-        if topic == None: #this is the way to define a script superclass
-            return None, []
-        if topic not in self._topics:
-            self._new_topic(topic)
-
-        alternates = {}
-        if hasattr(instance, "alternates"):
-            alternates = self._validate_alternates(instance.alternates,
-                                                   script_class_name)
-        rules = []
-        for attribute in dir(instance):
-            if attribute.startswith('rule'):
-                rule = self._load_rule(topic, script_class_name, instance,
-                                       attribute, alternates)
-                rules.append(rule)
-        return topic, rules
-
-   
-    def _validate_alternates(self, alternates, script_class_name):
-        if not isinstance(alternates, dict):
-            raise InvalidAlternatesError(
-                u"self.alternates is not a dictionary in {0}.".format(
-                    script_class_name))
-        valid = DecodedDict(self._encoding)
-        for k, v in alternates.items():
-            try:
-                if isinstance(v, str):
-                    v = unicode(v, self._encoding)
-                valid[k] = Pattern(v, simple=True,
-                                   say=self._say).formatted_pattern
-            except PatternError as e:
-                e.args += (u' in alternates["{0}"] '
-                           'of {1}.'.format(unicode(k, self._encoding),
-                                            script_class_name),)
-                raise
-        return {"a":valid}
-
-    def _load_rule(self, topic, script_class_name, instance, attribute,
-                      alternates):
-        """ Given an instance of a class derived from Script and
-        a callable attribute, check that it is declared correctly, 
-        and then add it to the rules database for the given topic.
-        """
-        method = getattr(instance, attribute)
-        rulename = script_class_name + "." + attribute
-
-        argspec = get_method_spec(rulename, method)
-
-        raw_pattern, raw_previous, weight = argspec.defaults
-        if isinstance(raw_pattern, str):
-            raw_pattern = unicode(raw_pattern, self._encoding)
-        if isinstance(raw_previous, str):
-            raw_previous = unicode(raw_previous, self._encoding)
-        return Rule(raw_pattern, raw_previous, weight, alternates,
-                    method, rulename, say=self._say)
-
-    def _load_substitute(self, topic, script_class, attribute):
-        pass
-
-    def sort_rules(self):
-        """ Sort the rules for each topic """
-        if self.rules_sorted:
-            return
-        for n, t in self._topics.items():
-            t.sortedrules = sorted([rule for key, rule in t.rules.items()],
-                                   reverse=True)
-        self.rules_sorted = True
-        self._say("-"*20 + "Sorted rules" + "-"*20)
-        for r in t.sortedrules:
-            self._say('"{0}"/"{1}"'.format(r.pattern.formatted_pattern,
-                                           r.previous.formatted_pattern))
-        self._say("-"*52)
 
     
     def reply(self, user, message):
@@ -372,34 +115,37 @@ class ChatbotEngine(object):
         RecursionTooDeepError -- if recursion goes over depth limit passed
             to __init__
         """
-        self.sort_rules()
-        self._say(u'Asked to reply to: "{0}" from {1}'.format(message, user))
+        self.rules_db.sort_rules()
+        self._say('Asked to reply to: "{0}" from {1}'.format(message, user))
         self._set_user(user)
-        Script.botvars = self._variables['b']
+        Script.botvars = self.botvars
         if not isinstance(message, unicode):
             raise TypeError("message argument must be unicode, not str")
 
         reply = self._reply(user, message, 0)
-        self._history.update(message, Target(reply, say=self._say))
+        self.users[user].history.update(message, Target(reply, say=self._say))
         return reply
 
     def _reply(self, user, message, depth):
         if depth > self._depth_limit:
             raise RecursionTooDeepError
-        self._say(u'Searching for rule matching "{0}", depth == {1}'.format(
+        self._say('Searching for rule matching "{0}", depth == {1}'.format(
             message, depth))
         
         target = Target(message, say=self._say)
         reply = ""
-        for rule in self._topics["all"].sortedrules:
-            m = rule.match(target, self._history, self._variables)
+        for rule in self.rules_db.topics["all"].sortedrules:
+            m = rule.match(target, self.users[user].history, self._variables)
             if m is not None:
-                self._say(u"Found match, rule {0}".format(
+                self._say("Found match, rule {0}".format(
                     rule.rulename))
                 Script.match = m.dict
                 reply = rule.method()
-                if isinstance(reply, str):
-                    reply = unicode(reply, self._encoding)
+                if not isinstance(reply, unicode):
+                    raise TypeError("Rule {0} returned something other than a "
+                                    "unicode string.".format(rule.rulename))
+                self._say('Rule {0} returned "{1}"'.format(
+                    rule.rulename, reply))
                 break
 
         reply = self._recursively_expand_reply(user, m, reply, depth)
@@ -428,146 +174,34 @@ class ChatbotEngine(object):
         
 
     def _set_user(self, user):
-        if user not in self._uservars:
-            self._uservars[user] = DecodedDict(self._encoding)
-            self._uservars[user]["__topic__"] = "all"
-        uservars = self._uservars[user]
+        new = False
+        if user not in self.users:
+            self.users[user] = UserInfo()
+            new = True
+        uservars = self.users[user].vars
         
         topic = uservars["__topic__"]
-        if topic not in self._topics:
-            self._say(u"User {0} is in empty topic {1}, "
+        if topic not in self.rules_db.topics:
+            self._say("User {0} is in empty topic {1}, "
                       "returning to 'all'".format(user, topic))
             topic = uservars["__topic__"] = "all"
 
         Script.set_user(user, uservars)
-        self._variables[u"u"] = uservars
+        self._variables["u"] = uservars
+
+        if new:
+            for i in self.rules_db.script_instances:
+                i.setup_user(user)
+            
         
     def _set_topic(self, user, topic):
-        self._uservars[user]["__topic__"] = topic
+        self.users[user].vars["__topic__"] = topic
 
-    
-
-class Topic(object):
+class UserInfo(object):
     def __init__(self):
-        self.rules = {}
-        self.sortedrules = []
-    
-
-    def __eq__(self, other):
-        return self.formatted_pattern == other.formatted_pattern
-
-
-class Rule(object):
-    """ Pattern matching and response rule.
-
-    Describes one method decorated by @rule. Parses
-    the simplified regular expression strings, raising PatternError
-    if there is an error. Can match the pattern and previous_pattern
-    against tokenized input (a Target) and return a Match object.
-
-    Public instance variables:
-    pattern - the Pattern object to match against the current message
-    previous - the Pattern object to match against the previous reply
-    weight - the weight, given to @rule
-    method - a reference to the decorated method
-    rulename - classname.methodname, for error messages
-
-    Public methods:
-    match - given current message and reply history, return a Match
-            object if the patterns match or None if they don't
-    full set of comparison operators - to enable sorting first by weight then 
-            score of the two patterns
-    """
-    def __init__(self, raw_pattern, raw_previous, weight, alternates,
-                 method, rulename, say=print):
-        """ Create a new Rule object based on information supplied to the
-        @rule decorator. Arguments:
-        raw_pattern - simplified regular expression string (not necessarily 
-                      unicode) supplied to @rule
-        raw_previous - simplified regular expression string (not necessarily 
-                      unicode)supplied to @rule
-        weight -  weight supplied to @rule
-        alternates - dictionary of variable names and values that can
-                   be substituted in the patterns by PatternParser
-        method - reference to method decorated by @rule
-        rulename - modulename.classname.methodname, used to make better
-                 error messages
-        say - a function that takes a string, for debug output. Or None.
-
-        Raises PatternError, PatternVariableNotFoundError, 
-               PatternVariableValueError
-        """
-        try:
-            previous = ""
-            if not raw_pattern:
-                raise PatternError("Empty string found")
-            self.pattern = Pattern(raw_pattern, alternates, say=say)
-            previous = "previous "
-            self.previous = Pattern(raw_previous, alternates, say=say)
-        except (PatternError, PatternVariableValueError,\
-               PatternVariableNotFoundError) as e:
-            e.args += (u" in {0}pattern of {1}.".format(previous, rulename),)
-            raise
-
-        self.alternates = alternates
-        self.weight = weight
-        self.method = method
-        self.rulename = rulename
-        if say is None:
-            say = lambda s:s
-        self._say = say
-
-    def match(self, target, history, variables):
-        """ Return a Match object if the targets match the patterns
-        for this rule, or None if they don't.
-        Arguments:
-            target - a Target object for the user's message
-            history - a History object containing Targets for previous
-                      messages and replies
-            variables - User and Bot variables for the PatternParser
-                      to substitute into the patterns
-        """
-        m = self.pattern.match(target.normalized, variables)
-
-        if m is None:
-            return None
-        mp = None
-        reply_target = None
-        if self.previous:
-            if not history.replies:
-                return None
-            reply_target = history.replies[0]
-            self._say("[Rule] checking previous {0} vs target {1}".format(
-                self.previous.formatted_pattern, reply_target.normalized))
-            mp = self.previous.match(reply_target.normalized, variables)
-            if mp is None:
-                return None
-        return Match(m, mp, target, reply_target)
-
-    def __lt__(self, other):
-        return (self.weight < other.weight
-                or
-                (self.weight == other.weight
-                 and self.pattern.score < other.pattern.score)
-                or
-                (self.weight == other.weight
-                 and self.pattern.score == other.pattern.score
-                 and self.previous.score < other.previous.score))
-                
-    def __eq__(self, other):
-        return (self.weight == other.weight
-                and self.pattern.score == other.pattern.score
-                and self.previous.score == other.previous.score)
-
-    def __gt__(self, other):
-        return not (self == other or self < other)
-    def __le__(self, other):
-        return self < other or self == other
-    def __ge__(self, other):
-        return self > other or self == other
-    def __ne__(self, other):
-        return not self == other
-
+        self.vars = {}
+        self.vars["__topic__"] = "all"
+        self.history = History(10)
 
     
 class Target(object):
@@ -613,12 +247,12 @@ class Target(object):
                           for word in self.lc_words]
         self.tokenized_words = [[self._kill_non_alphanumerics(word)
                         for word in wl] for wl in self.sub_words]
-        self.normalized = u" ".join(
-                                [u" ".join(wl) for wl in self.tokenized_words])
+        self.normalized = " ".join(
+                                [" ".join(wl) for wl in self.tokenized_words])
         if say == None:
             say = lambda s:s
         self._say = say
-        self._say(u'[Target] Normalized message to "{0}"'.format(self.normalized))
+        self._say('[Target] Normalized message to "{0}"'.format(self.normalized))
 
     def split_on_spaces(self, text):
         """ Because this has to work in Py 2.6, and re.split doesn't do UNICODE
@@ -655,58 +289,9 @@ class History(object):
         pass
     def update(self, message, reply):
         if len(self.messages) >= self.size:
-            pop(self.messages)
+            self.messages.pop()
         if len(self.replies) >= self.size:
-            pop(self.replies)
+            self.replies.pop()
         self.messages.insert(0, message)
         self.replies.insert(0, reply)
 
-class Match(object):
-    """ dictionary
-    match0..matchn - memorized matches
-    botmatch0...botmatchn -- matches in the previous reply
-    orig0 -- untokenized text
-    bot_orig0 --
-    """
-    def __init__(self, m_pattern, m_previous, target, previous_target, say=None):
-        self.dict = {}
-        for k, v in m_pattern.groupdict().items():
-            self.dict[k] = v
-        if m_previous is not None:
-            for k, v in m_previous.groupdict().items():
-                self.dict["bot"+k] = v
-
-class DecodedDict(collections.MutableMapping):
-    """A dictionary that converts str's to unicode before accessing the
-       keys or values. Any other type used as key or value will be left alone.
-
-    """
-
-    def __init__(self, encoding):
-        """ Create a new empty DecodedDict. Does not take args and kwargs
-        like the normal dict init, instead pass the encoding to use on any
-        str's used as keys or values. 
-        """
-        self.store = dict()
-        self.encoding = encoding
-
-    def __getitem__(self, key):
-        return self.store[self._decode(key)]
-
-    def __setitem__(self, key, value):
-        self.store[self._decode(key)] = self._decode(value)
-
-    def __delitem__(self, key):
-        del self.store[self._decode(key)]
-
-    def __iter__(self):
-        return iter(self.store)
-
-    def __len__(self):
-        return len(self.store)
-
-    def _decode(self, s):
-        if isinstance(s, str):
-            s = unicode(s, self.encoding)
-        return s
-    
