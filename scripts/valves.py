@@ -51,7 +51,7 @@ class ValveScript(Script):
         if self.drainvalvestatus() == "open":
             return "The drain valve is open. Please close it before opening the {match0}."
         if self.leaksensorstatus() == "wet":
-            return "<leak sensor status>. Please dry it and reset it before opening the {match0}."
+            return "<leak sensor status> Please dry it and reset it before opening the {match0}."
         self.tellmainvalve("open")
         return "I'll tell the {match0} to open" + self.stall_for_time()
 
@@ -102,7 +102,7 @@ class ValveScript(Script):
         if self.mainvalvestatus() == "open":
             return "It's already on."
         if self.leaksensorstatus() == "wet":
-            return "<leak sensor status>. Please dry it and reset it before turning the water on."
+            return "<leak sensor status> Please dry it and reset it before turning the water on."
         if self.drainvalvestatus() == "open":
             self.telldrainvalve("close")
             return "I closed the drain valve and <open shutoff valve>"
@@ -125,7 +125,7 @@ class ValveScript(Script):
 
     @rule("(water|leak) sensor status")
     def rule_water_sensor_status(self):
-        return "The water leak sensor is {0}".format(self.leaksensorstatus())
+        return "The water leak sensor is {0}.".format(self.leaksensorstatus())
 
 
     @rule("sensor wet")
