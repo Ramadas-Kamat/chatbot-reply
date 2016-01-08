@@ -1,6 +1,7 @@
 #Any copyright is dedicated to the Public Domain.
 #http://creativecommons.org/publicdomain/zero/1.0/
 from __future__ import unicode_literals
+import string
 from chatbot_reply import Script, rule
 
 class TutorialScript(Script):
@@ -31,8 +32,8 @@ class TutorialScript(Script):
 
     @rule("_* told me to say _*")
     def rule_star2_told_me_to_say_star(self):
-        return ['Why would {match0} tell you to say "{match1}"?',
-                'Are you just saying "{match1}" because {match0} told you to?']
+        return ['Why would {raw_match0} tell you to say "{match1}"?',
+                'Are you just saying "{match1}" because {raw_match0} told you to?']
     
     @rule("i am _#1 years old")
     def rule_i_am_number1_years_old(self):
@@ -111,10 +112,11 @@ class TutorialScript(Script):
     def rule_hi(self):
         return "<hello>"
 
-    @rule("my name is _*~3")
+    @rule("my name is _@~3")
     def rule_my_name_is_star(self):
-        self.uservars["name"] = self.match["match0"]
-        return "It's nice to meet you, {match0}."
+        name = self.match["raw_match0"].rstrip(string.punctuation)
+        self.uservars["name"] = name
+        return "It's nice to meet you, {0}.".format(name)
 
     @rule("what is my name")
     def rule_what_is_my_name(self):

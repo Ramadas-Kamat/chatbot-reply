@@ -33,21 +33,17 @@ class HokeyPokeyScript(Script):
         else:
             return "Hay is for horses."
 
-    @rule("hello _*")
-    def rule_hello_star(self):
-        return "<hello> {match0}"
-
     @rule("knock knock")
     def rule_knock_knock(self):
         return "Who's there?"
 
     @rule("_*", previous="whos there")
     def rule_star_prev_who_is_there(self):
-        return "{match0} who?"
+        return "{raw_match0} who?"
 
     @rule("_*", previous="* who")
     def rule_star_prev_star_who(self):
-        return "Lol {match0}! That's a good one!"
+        return "Lol {raw_match0}! That's a good one!"
 
     @rule("put your _* in")
     def rule_put_your_star_in(self):

@@ -11,6 +11,7 @@ import inspect
 import random
 
 from .exceptions import *
+from .constants import _PREFIX
 
 def rule(pattern_text, previous="", weight=1):
     def rule_decorator(func):
@@ -21,8 +22,9 @@ def rule(pattern_text, previous="", weight=1):
             try:
                 return self.choose(result).format(*[], **Script.match)
             except Exception, e:
-                name = func.__module__ + "." + func.__name__
-                e.args += (" in Script.choose processing return value "
+                name = (func.__module__[len(_PREFIX):] + "." +
+                        self.__class__.__name__ + "." + func.__name__)
+                e.args += (" in @rule while processing return value "
                            "from {0}".format(name),)
                 raise
         return func_wrapper

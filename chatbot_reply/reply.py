@@ -9,8 +9,10 @@
 """
 from __future__ import print_function
 from __future__ import unicode_literals
+import collections
 import re
 
+from .constants import _HISTORY
 from .patterns import Pattern
 from .rules import Rule, RulesDB
 from .script import Script
@@ -82,11 +84,7 @@ class ChatbotEngine(object):
         self.rules_db = RulesDB(self._say)
 
     def load_script_directory(self, directory):
-        self.rules_db.load_script_directory(directory)
-        Script.botvars = self.botvars
-        for inst in self.rules_db.script_instances:
-            inst.setup()
-
+        self.rules_db.load_script_directory(directory, self.botvars)
 
     def _say(self, message, warning=""):
         """Print all warnings to the error log, and debug messages to the
@@ -121,7 +119,8 @@ class ChatbotEngine(object):
             raise TypeError("message argument must be unicode, not str")
 
         reply = self._reply(user, message, 0)
-        self.users[user].history.update(message, Target(reply, say=self._say))
+        self.users[user].msg_history.appendleft(message)
+        self.users[user].repl_history.appendleft(Target(reply, say=self._say))
         return reply
 
     def _reply(self, user, message, depth):
@@ -133,7 +132,8 @@ class ChatbotEngine(object):
         target = Target(message, say=self._say)
         reply = ""
         for rule in self.rules_db.topics["all"].sortedrules:
-            m = rule.match(target, self.users[user].history, self._variables)
+            m = rule.match(target, self.users[user].repl_history,
+                           self._variables)
             if m is not None:
                 self._say("Found match, rule {0}".format(
                     rule.rulename))
@@ -199,7 +199,8 @@ class UserInfo(object):
     def __init__(self):
         self.vars = {}
         self.vars["__topic__"] = "all"
-        self.history = History(10)
+        self.msg_history = collections.deque(maxlen=_HISTORY)
+        self.repl_history = collections.deque(maxlen=_HISTORY)
 
     
 class Target(object):
@@ -210,8 +211,8 @@ class Target(object):
     - Kill remaining non-alphanumeric characters
 
     Public instance variables:
-    orig_text: the string passed to the constructor
-    orig_words: a list of words of the same string, split on whitespace
+    raw_text: the string passed to the constructor
+    raw_words: a list of words of the same string, split on whitespace
     tokenized_words: a list of lists, one for each word in orig_words
         after making them lower case, doing substitutions (see below),
         and removing all remaining non-alphanumeric characters.
@@ -219,7 +220,7 @@ class Target(object):
     normalized: tokenized_words, joined back together by single spaces
 
     For example, given that "i'm" => "i am" and "," => "comma" are in the 
-    substitutions list, here are the resulting values of orig_words,
+    substitutions list, here are the resulting values of raw_words,
     tokenized_words, and normalized:
 
     I'm tired today! ==>  ["I'm", "tired", "today!"],
@@ -238,9 +239,9 @@ class Target(object):
                                      "i need bacon comma eggs and milk"
     """
     def __init__(self, text, substitutions=None, say=print):
-        self.orig_text = text
-        self.orig_words = self.split_on_spaces(text)
-        self.lc_words = [word.lower() for word in self.orig_words]
+        self.raw_text = text
+        self.raw_words = self.split_on_spaces(text)
+        self.lc_words = [word.lower() for word in self.raw_words]
         self.sub_words = [self._do_substitutions(word, substitutions)
                           for word in self.lc_words]
         self.tokenized_words = [[self._kill_non_alphanumerics(word)
@@ -279,17 +280,4 @@ class Target(object):
         result = "".join([text[m.span()[0]:m.span()[1]] for m in matches])
         return result        
             
-class History(object):
-    def __init__(self, size):
-        self.messages = []
-        self.replies = []
-        self.size = size
-        pass
-    def update(self, message, reply):
-        if len(self.messages) >= self.size:
-            self.messages.pop()
-        if len(self.replies) >= self.size:
-            self.replies.pop()
-        self.messages.insert(0, message)
-        self.replies.insert(0, reply)
 

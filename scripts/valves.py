@@ -76,7 +76,7 @@ class ValveScript(Script):
     def stall_for_time(self):
         return self.choose([" and get back to you shortly.",
                             ". Give me just a moment.",
-                            ". I'll check back with you shortly."
+                            ". I'll check back with you shortly.",
                             ". I'll check back with you in a moment.",
                             " and get back to you in a moment.",
                             " and get back to you in just a moment."])
@@ -130,11 +130,13 @@ class ValveScript(Script):
 
     @rule("sensor wet")
     def rule_sensor_wet(self):
-        self.uservars["leaksensorstatus"] = "wet"        
+        self.uservars["leaksensorstatus"] = "wet"
+        return "Now the leak sensor is wet."
 
     @rule("sensor dry")
     def rule_sensor_dry(self):
         self.uservars["leaksensorstatus"] = "dry"
+        return "Now the leak sensor is dry."
 
     def mainvalvestatus(self):
         return self.uservars["mainvalvestatus"]

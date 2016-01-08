@@ -38,8 +38,8 @@ class TargetTestCase(unittest.TestCase):
                     "Apples, oranges and bananas!", "This one isn't as hard"]
         for p in problems:
             t = Target(p, say=None)
-            self.assertEqual(t.orig_text, p)
-            self.assertEqual(len(t.orig_words), len(t.tokenized_words))
+            self.assertEqual(t.raw_text, p)
+            self.assertEqual(len(t.raw_words), len(t.tokenized_words))
             for wl in t.tokenized_words:
                 self.assertTrue(isinstance(wl, list))
             
@@ -201,6 +201,13 @@ class TestScript(Script):
     @rule("*", previous="results _*1 _*1")
     def rule_after_results(self):
         return "again: {botmatch0} {botmatch1}"
+    @rule("my name is _@1 _@1")
+    def rule_my_name_is(self):
+        return "I'll put you down as {raw_match1}, {raw_match0}."
+    @rule("play it again sam", previous="_* as _*")
+    def rule_play_it_again(self):
+        return ("The first part was '{raw_botmatch0}' "
+                "and the second part was '{raw_botmatch1}'.")
 """
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
@@ -209,6 +216,11 @@ class TestScript(Script):
                          u"results: 5 spam")
         self.assertEqual(self.ch.reply("local", u"test"),
                          u"again: 5 spam")
+        self.assertEqual(self.ch.reply("local", u"My name is Fred Flintstone"),
+                         u"I'll put you down as Flintstone, Fred.")
+        self.assertEqual(self.ch.reply("local", u"Play it again, Sam!"),
+                         u"The first part was 'I'll put you down' and the "
+                         u"second part was 'Flintstone, Fred.'.")
         self.assertFalse(self.errorlogger.called)
 
     def test_Reply_Matches_RuleWithPrevious(self):
@@ -263,16 +275,27 @@ class TestScript(Script):
 class TestScript(Script):
     def setup(self):
         self.botvars["numbers"] = "(1|3|5|7|9)"
+        self.alternates = {"colors": "(red|green|blue)"}
+    def setup_user(self, user):
+        self.uservars["letters"] = "(x|y|z)"
     @rule("the number is %b:numbers")
     def rule_number(self):
         return "pass1"
     @rule("the letter is %u:letters")
     def rule_letter(self):
         return "pass2"
-    @rule("set letters")
-    def rule_set_letters(self):
-        self.uservars["letters"] = "(x|y|z)"
-        return "ok"
+    @rule("the mistake is %b:undefined")
+    def rule_mistake(self):
+        return "fail"
+    @rule("i need %b:numbers %a:colors %u:letters")
+    def rule_need(self):
+        return "pass3"
+    @rule("say it")
+    def rule_say_it(self):
+        return "number 5 color blue letter x"
+    @rule("check it", previous="number %b:numbers color %a:colors letter %u:letters")
+    def rule_check_it(self):
+        return "pass4"
     @rule("*")
     def rule_star(self):
         return "star"
@@ -280,9 +303,13 @@ class TestScript(Script):
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
         self.assertEqual(self.ch.reply("local", u"The number is 9"), "pass1")
-        self.assertEqual(self.ch.reply("local", u"The letter is"), "star")
-        self.assertEqual(self.ch.reply("local", u"Set letters."), "ok")
         self.assertEqual(self.ch.reply("local", u"The letter is x"), "pass2")
+        self.assertEqual(self.ch.reply("local", u"The mistake is"), "star")
+        self.assertEqual(self.ch.reply("local", u"I need 1 green z"), "pass3")
+        self.assertEqual(self.ch.reply("local", u"Say it"), "number 5 color blue letter x")
+        self.assertEqual(self.ch.reply("local", u"Check it"), "pass4")
+        self.assertEqual(self.ch.reply("local", u"Check it"), "star")
+        
         self.assertFalse(self.errorlogger.called)        
         
     def test_Reply_RecursivelyExpandsRuleReplies(self):
@@ -371,11 +398,11 @@ class TestScript(Script):
 class TestScript(Script):
     @rule("my name is _@~3")
     def rule_name(self):
-        self.uservars["name"] = self.match["match0"]
+        self.uservars["name"] = self.match["raw_match0"]
         return "Nice to meet you!"
     @rule("what did you just say", previous="_*")
     def rule_what(self):
-        return 'I just said "{botmatch0}"'
+        return 'I just said "{raw_botmatch0}"'
     @rule("what is my name")
     def rule_what_name(self):
         if "name" in self.uservars:
@@ -386,17 +413,16 @@ class TestScript(Script):
         conversation = [
             (u"one", u"My name is Test One", u"Nice to meet you!"),
             (u"two", u"What is my name?", u"You haven't told me."),
-            (u"one", u"What did you just say?", u'I just said "nice to meet you"'),
+            (u"one", u"What did you just say?",
+                     u'I just said "Nice to meet you!"'),
             (u"two", u"My name is Test Two", u"Nice to meet you!"),
-            (u"one", u"What is my name?", u"Your name is test one.")]
+            (u"one", u"What is my name?", u"Your name is Test One.")]
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
         for user, msg, rep in conversation:
             self.assertEqual(self.ch.reply(user, msg), rep)
         self.assertFalse(self.errorlogger.called)
         
-        
-
     def write_py(self, py, filename="test.py"):
         filename = os.path.join(self.scripts_dir, filename)
         with open(filename, "wb") as f:

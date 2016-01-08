@@ -7,31 +7,21 @@
 """
 from __future__ import print_function
 from __future__ import unicode_literals
-import collections
+
+import bisect
 import imp
 import inspect
 import os
-import re
-import traceback
 
-from codecs import BOM_UTF8
-
-from .patterns import Pattern
+from .constants import _PREFIX
 from .exceptions import *
+from .patterns import Pattern
 from .script import Script, ScriptRegistrar
-    
-_PREFIX = "___" # added to script module names to avoid 
-                                  # namespace conflicts
-
 
 class Topic(object):
     def __init__(self):
         self.rules = {}
         self.sortedrules = []
-    
-    def __eq__(self, other):
-        return self.formatted_pattern == other.formatted_pattern
-
 
 class Rule(object):
     """ Pattern matching and response rule.
@@ -46,7 +36,7 @@ class Rule(object):
     previous - the Pattern object to match against the previous reply
     weight - the weight, given to @rule
     method - a reference to the decorated method
-    rulename - classname.methodname, for error messages
+    rulename - modulename.classname.methodname, for error messages
 
     Public methods:
     match - given current message and reply history, return a Match
@@ -58,10 +48,8 @@ class Rule(object):
                  method, rulename, say=print):
         """ Create a new Rule object based on information supplied to the
         @rule decorator. Arguments:
-        raw_pattern - simplified regular expression string (not necessarily 
-                      unicode) supplied to @rule
-        raw_previous - simplified regular expression string (not necessarily 
-                      unicode)supplied to @rule
+        raw_pattern - simplified regular expression string supplied to @rule
+        raw_previous - simplified regular expression string supplied to @rule
         weight -  weight supplied to @rule
         alternates - dictionary of variable names and values that can
                    be substituted in the patterns by PatternParser
@@ -98,22 +86,26 @@ class Rule(object):
         for this rule, or None if they don't.
         Arguments:
             target - a Target object for the user's message
-            history - a History object containing Targets for previous
-                      messages and replies
+            history - a deque object containing Targets for previous
+                      replies
             variables - User and Bot variables for the PatternParser
                       to substitute into the patterns
         """
-        m = self.pattern.match(target.normalized, variables)
+        allvars = {}
+        allvars.update(self.alternates)
+        allvars.update(variables)
+        
+        m = self.pattern.match(target.normalized, allvars)
 
         if m is None:
             return None
         mp = None
         reply_target = None
         if self.previous:
-            if not history.replies:
+            if not history:
                 return None
-            reply_target = history.replies[0]
-            mp = self.previous.match(reply_target.normalized, variables)
+            reply_target = history[0]
+            mp = self.previous.match(reply_target.normalized, allvars)
             if mp is None:
                 return None
         return Match(m, mp, target, reply_target)
@@ -147,18 +139,30 @@ class Match(object):
     """ dictionary
     match0..matchn - memorized matches
     botmatch0...botmatchn -- matches in the previous reply
-    orig0 -- untokenized text
+    raw_match0..rawn -- untokenized text
     bot_orig0 --
     """
     def __init__(self, m_pattern, m_previous, target, previous_target, say=None):
         self.dict = {}
-        for k, v in m_pattern.groupdict().items():
-            self.dict[k] = v
+        self._add_matches(m_pattern, target, "")
         if m_previous is not None:
-            for k, v in m_previous.groupdict().items():
-                self.dict["bot"+k] = v
+            self._add_matches(m_previous, previous_target, "bot")
 
-                
+    def _add_matches(self, m, target, prefix):
+        offsets = []
+        offset = 0
+        for wl in target.tokenized_words:
+            offsets.append(offset)
+            offset += len(" ".join(wl)) + 1
+            
+        for k, v in m.groupdict().items():
+            self.dict[prefix + k] = v
+            start, end = m.span(k)
+            i_start = bisect.bisect_left(offsets, start)
+            i_end = bisect.bisect(offsets, end)
+            self.dict["raw_" + prefix + k] = " ".join(target.raw_words[i_start:
+                                                                       i_end])
+
 class RulesDB(object):
     def __init__(self, say=print):
         self.clear_rules()
@@ -176,14 +180,17 @@ class RulesDB(object):
         """ Add a new topic to the rules database. """
         self.topics[topic] = Topic()
  
-    def load_script_directory(self, directory):
+    def load_script_directory(self, directory, botvars):
         """Iterate through the .py files in a directory, and import all of
         them. Then look for subclasses of Script and search them for
         rules, and load those into self.topics.
+        botvars is a dictionary that loaded scripts can use to initialize
+        chatobt state
 
         """
         self.rules_sorted = False
         ScriptRegistrar.clear()
+        Script.botvars = botvars
         
         for item in os.listdir(directory):
             if item.lower().endswith(".py"):
@@ -252,8 +259,8 @@ class RulesDB(object):
         """
         global _PREFIX
         instance = script_class()
-        self.script_instances.append(instance)
         instance.setup()
+        self.script_instances.append(instance)
         script_class_name = (instance.__module__[len(_PREFIX):] + "." +
                              instance.__class__.__name__)
         
