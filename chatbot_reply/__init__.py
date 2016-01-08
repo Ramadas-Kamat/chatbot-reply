@@ -6,12 +6,11 @@
 
 from exceptions import PatternError, RuleMethodSpecError
 from exceptions import NoRulesFoundError, RecursionTooDeepError, InvalidAlternatesError
-from patterns import PatternParser
 from script import rule, Script
 from reply import ChatbotEngine
 
 __all__      = ["ChatbotEngine", "Script", "rule", "RuleMethodSpecError",
-                "PatternParser", "PatternError", "PatternVariableNotFoundError",
+                "PatternError", "PatternVariableNotFoundError",
                 "NoRulesFoundError", "RecursionTooDeepError",
                 "InvalidAlternatesError"
                 ]

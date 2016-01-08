@@ -19,7 +19,7 @@ def rule(pattern_text, previous="", weight=1):
                          weight=weight):
             result = func(self)
             try:
-                return self.choose(result)
+                return self.choose(result).format(*[], **Script.match)
             except Exception, e:
                 name = func.__module__ + "." + func.__name__
                 e.args += (" in Script.choose processing return value "
@@ -95,7 +95,6 @@ class Script(object):
                         break
                     else:
                         choice -= abs(weight)
-        reply = reply.format(*[], **Script.match)
         return reply
 
 

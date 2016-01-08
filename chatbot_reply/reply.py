@@ -18,10 +18,6 @@ from .exceptions import *
 
 #todo use imp thread locking, though this thing is totally not thread-safe
 #should force lowercase be an option?
-# the topic database should be its own class
-# need a class for variable dictionaries
-# warning if script sets Script.uservars in init
-# History needs to be per user. Put it in user variables?
 
 class ChatbotEngine(object):
     """ Python Chatbot Reply Generator
@@ -73,7 +69,6 @@ class ChatbotEngine(object):
 
         self.botvars = {}
         self.botvars["debug"] = unicode(debug)
-        Script.botvars = self.botvars
         
         self._variables = {"b" : self.botvars,
                            "u" : None}
@@ -87,7 +82,10 @@ class ChatbotEngine(object):
         self.rules_db = RulesDB(self._say)
 
     def load_script_directory(self, directory):
-        self.rules_db.load_script_directory(directory, self.botvars)
+        self.rules_db.load_script_directory(directory)
+        Script.botvars = self.botvars
+        for inst in self.rules_db.script_instances:
+            inst.setup()
 
 
     def _say(self, message, warning=""):
@@ -190,8 +188,8 @@ class ChatbotEngine(object):
         self._variables["u"] = uservars
 
         if new:
-            for i in self.rules_db.script_instances:
-                i.setup_user(user)
+            for inst in self.rules_db.script_instances:
+                inst.setup_user(user)
             
         
     def _set_topic(self, user, topic):

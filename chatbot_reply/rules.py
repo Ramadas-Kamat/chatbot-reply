@@ -165,7 +165,6 @@ class RulesDB(object):
         if say is None:
             say = lambda s:s
         self._say = say
-        self.botvars = None
 
     def clear_rules(self):
         """ Make a fresh new empty rules database. """
@@ -177,14 +176,13 @@ class RulesDB(object):
         """ Add a new topic to the rules database. """
         self.topics[topic] = Topic()
  
-    def load_script_directory(self, directory, botvars):
+    def load_script_directory(self, directory):
         """Iterate through the .py files in a directory, and import all of
         them. Then look for subclasses of Script and search them for
         rules, and load those into self.topics.
 
         """
         self.rules_sorted = False
-        self.botvars = Script.botvars = botvars
         ScriptRegistrar.clear()
         
         for item in os.listdir(directory):
