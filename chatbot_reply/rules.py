@@ -52,7 +52,7 @@ class Rule(object):
         raw_previous - simplified regular expression string supplied to @rule
         weight -  weight supplied to @rule
         alternates - dictionary of variable names and values that can
-                   be substituted in the patterns by PatternParser
+                   be substituted in the patterns
         method - reference to method decorated by @rule
         rulename - modulename.classname.methodname, used to make better
                  error messages
@@ -73,7 +73,6 @@ class Rule(object):
             e.args += (u" in {0}pattern of {1}.".format(previous, rulename),)
             raise
 
-        self.alternates = alternates
         self.weight = weight
         self.method = method
         self.rulename = rulename
@@ -91,11 +90,7 @@ class Rule(object):
             variables - User and Bot variables for the PatternParser
                       to substitute into the patterns
         """
-        allvars = {}
-        allvars.update(self.alternates)
-        allvars.update(variables)
-        
-        m = self.pattern.match(target.normalized, allvars)
+        m = self.pattern.match(target.normalized, variables)
 
         if m is None:
             return None
@@ -105,7 +100,7 @@ class Rule(object):
             if not history:
                 return None
             reply_target = history[0]
-            mp = self.previous.match(reply_target.normalized, allvars)
+            mp = self.previous.match(reply_target.normalized, variables)
             if mp is None:
                 return None
         return Match(m, mp, target, reply_target)

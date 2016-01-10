@@ -8,7 +8,7 @@
 """ Unit tests for Python Chatbot Reply Generator's Pattern Parser """
 from __future__ import unicode_literals
 
-from chatbot_reply.patterns import PatternParser
+from chatbot_reply.patterns import ParsedPattern
 from chatbot_reply import PatternError
 
 import re
@@ -18,8 +18,8 @@ import unittest
 
 class PatternParserTestCase(unittest.TestCase):
     def setUp(self):
-        self.pp = PatternParser()
-
+        pass
+    
     def tearDown(self):
         pass
 
@@ -28,21 +28,21 @@ class PatternParserTestCase(unittest.TestCase):
                     "foo *(x)", "foo @_a", "foo #[x!", "(x)#", "*%b", "la*la",
                     "_", "_abc", "*_", " _ ", "_%x:foo", "_|", "_ *"
                     "foo(", "foo@", "foo[", "foo^", "%u:foo(bar)"
-                    "          ",
+                    "          ", "___foo",
                     "%x:", "%xyzzy", "%", "  %:", "%x:foo", "%x:(ysy)", "%(:",
                     "%a", "%a:_zzz", "%b:123", "%u:*", "%u:[yyy]",
                     "]","foo]", "*]", "(foo])", ")))", "()", "(()))", "[[[]]",
                     "|", "a|b", "a | b", "(a|)", "[|]", "(foo)(bar)" ]
 
         for p in problems:
-            self._assertRaises(PatternError, self.pp.parse, p)
+            self._assertRaises(PatternError, ParsedPattern, p)
 
     def test_PP_RaisesExceptions_On_InvalidInput_in_SimpleMode(self):
         problems = ["*", "u%foo", "_(hello|goodbye)"]
 
         for p in problems:
             self._assertRaises(PatternError,
-                               lambda x:self.pp.parse(x, simple=True), p)
+                               lambda x:ParsedPattern(x, simple=True), p)
 
     def _assertRaises(self, error, func, arg):
         """ asserts and prints out what the argument was """
@@ -65,14 +65,14 @@ class PatternParserTestCase(unittest.TestCase):
                     "(hello world|%u:zzz|lalala|_[97]) [*|#~22]",
                     "(hello world|[foobarbaz|(%u:u|%a:a|foo)]|xyzzy)"]
         for p in problems:
-            self.assertEqual(p, self.pp.format(self.pp.parse(p)))
+            self.assertEqual(p, ParsedPattern(p).format())
 
-    def test_PP_Regex_Succeeds_on_SomeOfEverything(self):
+    def test_PP_Format_Succeeds_on_SomeOfEverything(self):
         problems = ["* hello world # @ @1~ #~2 @1~2 *1 *2 %u:hello_world %b:x %a:foo",
                     "(hello world|%u:zzz|lalala|_[97]) [*|#~2]",
                     "(hello world|[foobarbaz|(%u:u|%a:a|foo)]|xyzzy)"]
         for p in problems:
-            self.pp.format(self.pp.parse(p))
+            ParsedPattern(p).format()
 
     def test_PP_Matching(self):
         problems = [("hello",
@@ -139,7 +139,7 @@ class PatternParserTestCase(unittest.TestCase):
 
         for p in problems:
             pattern = p[0]
-            regex = self.pp.regex(self.pp.parse(pattern), variables) + "$"
+            regex = ParsedPattern(pattern).regex(variables) + "$"
             regexc = re.compile(regex, re.UNICODE)
             for good in p[1]:
                 match = re.match(regexc, good)
@@ -170,9 +170,12 @@ class PatternParserTestCase(unittest.TestCase):
                     ("my _[red|blue] car", "my red car", ["red"]),
                     ("my _[red|blue] car", "my car", [""]),
                     ("my _@~2 car", "my very fast car", ["very fast"]),
+                    ("my name is _@ [_@]", "my name is fred", ["fred", None]),
+                    ("my name is _@ [_@]", "my name is fred flintstone",
+                     ["fred", "flintstone"]),
                     ]
         for p in problems:
-            regex = self.pp.regex(self.pp.parse(p[0]), None)
+            regex = ParsedPattern(p[0]).regex(None)
             m = re.match(regex, p[1])
             if m is None:
                 print "Failed to match {0} with {1}".format(p[0], p[1])
@@ -192,7 +195,7 @@ class PatternParserTestCase(unittest.TestCase):
             
         
     def score(self, string):
-        return self.pp.score(self.pp.parse(string))
+        return ParsedPattern(string).score()
 
 if __name__ == "__main__":
     unittest.main()

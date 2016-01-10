@@ -126,4 +126,9 @@ class TutorialScript(Script):
             return ["Your name is {0}.".format(self.uservars["name"]),
                     "You told me your name is {0}.".format(self.uservars["name"])]
 
+    @rule("is my name %u:name")
+    def rule_is_my_name(self):
+        return "That's what you told me!"
+    
+
     
