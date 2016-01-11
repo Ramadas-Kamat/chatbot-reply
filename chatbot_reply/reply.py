@@ -131,7 +131,8 @@ class ChatbotEngine(object):
         
         target = Target(message, say=self._say)
         reply = ""
-        for rule in self.rules_db.topics["all"].sortedrules:
+        topic = self.users[user].vars["__topic__"]
+        for rule in self.rules_db.topics[topic].sortedrules:
             m = rule.match(target, self.users[user].repl_history,
                            self._variables)
             if m is not None:
@@ -144,6 +145,18 @@ class ChatbotEngine(object):
                                     "unicode string.".format(rule.rulename))
                 self._say('Rule {0} returned "{1}"'.format(
                     rule.rulename, reply))
+                if Script.current_topic != topic:
+                    if Script.current_topic not in self.rules_db.topics:
+                        self._say("Rule {0} changed to empty topic {1}, "
+                                  "returning to 'all'".format(rule.rulename,
+                                                              topic),
+                                  warning="Warning")
+                    else:
+                        topic = Script.current_topic
+                        self.users[user].vars["__topic__"] = topic
+                        self._say("User {0} now in topic {1}".format(user,
+                                                                     topic))
+
                 break
 
         reply = self._recursively_expand_reply(user, m, reply, depth)
@@ -191,10 +204,6 @@ class ChatbotEngine(object):
             for inst in self.rules_db.script_instances:
                 inst.setup_user(user)
             
-        
-    def _set_topic(self, user, topic):
-        self.users[user].vars["__topic__"] = topic
-
 class UserInfo(object):
     def __init__(self):
         self.vars = {}

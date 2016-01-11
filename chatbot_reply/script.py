@@ -20,23 +20,16 @@ def rule(pattern_text, previous="", weight=1):
                          weight=weight):
             result = func(self)
             try:
-                return self.choose(result).format(*[], **Script.match)
+                return self.matches_format(self.choose(result))
             except Exception, e:
                 name = (func.__module__[len(_PREFIX):] + "." +
                         self.__class__.__name__ + "." + func.__name__)
-                e.args += (" in @rule while processing return value "
-                           "from {0}".format(name),)
+                msg = (" in @rule while processing return value "
+                       "from {0}".format(name))
+                e.args += (e.args[0] + msg,) + e.args[1:]
                 raise
         return func_wrapper
     return rule_decorator
-
-def substitutions(subs, person=False):
-    def substitutions_decorator(func):
-        @wraps(func)
-        def func_wrapper(self, name=subs, person=person):
-            return func(self)
-        return func_wrapper
-    return substitutions_decorator
 
 class ScriptRegistrar(type):
     registry = []
@@ -56,7 +49,7 @@ class Script(object):
     topic = "all"
     botvars = None
     uservars = None
-    user_id = None
+    user = None
     match = None
     current_topic = None
 
@@ -68,7 +61,7 @@ class Script(object):
     @classmethod
     def set_user(cls, user, uservars):
         cls.uservars = uservars
-        cls.user_id = user
+        cls.user = user
         cls.current_topic = uservars["__topic__"]
     
     @classmethod
@@ -76,8 +69,7 @@ class Script(object):
         cls.current_topic = new_topic
         pass
     
-    @staticmethod
-    def choose(args):
+    def choose(self, args):
         # self.choose can be a flexible thing, variable number of arguments
         # and they can be either strings or (string, weight) tuples
         # or just return either a string or a list to be fed to self.choose
@@ -99,4 +91,7 @@ class Script(object):
                         choice -= abs(weight)
         return reply
 
+    def matches_format(self, string):
+        return string.format(*[], **Script.match)
+    
 

@@ -132,8 +132,7 @@ class Wild(Token):
             self.maximum = groups[2]
         self.minimum = unicode(max(int(self.minimum), 1))
         if self.maximum:
-            self.maximum = unicode(max(int(self.maximum),
-                                       int(self.minimum)))
+            self.maximum = unicode(max(int(self.maximum), int(self.minimum)))
 
     def add_to_parsetree(self, parsetree):
         parsetree.contents.append(self)
@@ -217,7 +216,7 @@ class Memo(Token):
 
     def regex(self, variables, counter):
         return "(?P<match{0}>{1})".format(counter.next(),
-            self.item.regex(variables, counter))
+                                          self.item.regex(variables, counter))
 
 class Space(Token):
     """ Parse and represent whitespace.
@@ -228,7 +227,8 @@ class Space(Token):
     def add_to_parsetree(self, parsetree):
         # leading spaces (for example within a group) are ignored,
         # as are multiple spaces in a row
-        if (parsetree.contents and isinstance(parsetree.contents[-1], Token)
+        if (parsetree.contents
+            and isinstance(parsetree.contents[-1], Token)
             and not isinstance(parsetree.contents[-1], Space)):
             parsetree.contents.append(self)
 
@@ -277,8 +277,8 @@ class Variable(Token):
             parse_tree = ParsedPattern(value, simple=True)
             regex = parse_tree.regex(None)
         except PatternError as e:
-            e.args += (" in variable %{0}:{1}".format(self.var_id,
-                                                      self.var_name),)
+            msg = " in variable %{0}:{1}".format(self.var_id, self.var_name)
+            e.args = (e.args[0] + msg,) + e.args[1:]
             raise
 
         return regex + r"\b"
@@ -355,7 +355,7 @@ class Pipe(Token):
         parsetree.group_tokens()
 
 class Invalid(Token):
-    """ Throw a PatternError, used by when the tokenizer finds an unknown 
+    """ Throw a PatternError, used when the tokenizer finds an unknown 
     character.
     """
     def __init__(self, tokens, text, terminator):
@@ -418,6 +418,10 @@ class PatternTokenizer(object):
         self._regexc = re.compile("|".join(regexes), re.UNICODE)
             
     def tokens(self, string):
+        """ Returns a generator expression which will yield (token_class, text)
+        for each matching regular expression that it finds in the string.
+        Raises TypeError if not given a unicode argument.
+        """
         if not isinstance(string, unicode):
             raise TypeError("Argument must be unicode string")
         while True:
@@ -449,7 +453,6 @@ class ParsedPattern(object):
             pp = ParsedPattern(pattern, simple=True)
 
         The following variations are used during the recursion process:
-
             To create an empty ParsedPattern:
                 pp = ParsedPattern() 
 

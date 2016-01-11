@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+# coding=utf-8
 # Copyright (c) 2016 Gemini Lasswell
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -19,13 +19,6 @@ from chatbot_reply import NoRulesFoundError, InvalidAlternatesError
 from chatbot_reply import PatternError, RuleMethodSpecError
 from chatbot_reply import RecursionTooDeepError
 from chatbot_reply.reply import Target
-
-class RuleTestCase(unittest.TestCase):
-    def test_Rule_Correctly_ComparesByWeightAndScore(self):
-        pass
-    def test_Rule_Raises_OnInvalidPattern(self):
-        pass
-    
 
 class TargetTestCase(unittest.TestCase):
     def setUp(self):
@@ -56,6 +49,7 @@ class ChatbotEngineTestCase(unittest.TestCase):
 from __future__ import unicode_literals
 from chatbot_reply import Script, rule
 """
+        self.py_encoding = "# coding=utf-8\n"
 
     def tearDown(self):
         for item in os.listdir(self.scripts_dir):
@@ -209,19 +203,17 @@ class TestScript(Script):
         return ("The first part was '{raw_botmatch0}' "
                 "and the second part was '{raw_botmatch1}'.")
 """
-        self.write_py(py)
-        self.ch.load_script_directory(self.scripts_dir)
-        self.assertEqual(self.ch.reply("local",
-                                       u"The number is 5 and the word is spam"),
-                         u"results: 5 spam")
-        self.assertEqual(self.ch.reply("local", u"test"),
-                         u"again: 5 spam")
-        self.assertEqual(self.ch.reply("local", u"My name is Fred Flintstone"),
-                         u"I'll put you down as Flintstone, Fred.")
-        self.assertEqual(self.ch.reply("local", u"Play it again, Sam!"),
+        conversation = [("local", u"The number is 5 and the word is spam",
+                         u"results: 5 spam"),
+                        ("local", u"test", u"again: 5 spam"),
+                        ("local", u"My name is Fred Flintstone",
+                         u"I'll put you down as Flintstone, Fred."),
+                        ("local", u"Play it again, Sam!",
                          u"The first part was 'I'll put you down' and the "
                          u"second part was 'Flintstone, Fred.'.")
-        self.assertFalse(self.errorlogger.called)
+                        ]
+
+        self.have_conversation(py, conversation)
 
     def test_Reply_Matches_RuleWithPrevious(self):
         py = self.py_imports + """
@@ -265,10 +257,7 @@ class TestScript(Script):
     def rule_star(self):
         return "fail"
 """
-        self.write_py(py)
-        self.ch.load_script_directory(self.scripts_dir)
-        self.assertEqual(self.ch.reply("local", u"The number is 5"), "pass")
-        self.assertFalse(self.errorlogger.called)
+        self.have_conversation(py, [("local", u"The number is 5", "pass")])
         
     def test_Reply_Matches_RuleWithVariableExpansion(self):
         py = self.py_imports + """
@@ -300,17 +289,15 @@ class TestScript(Script):
     def rule_star(self):
         return "star"
 """
-        self.write_py(py)
-        self.ch.load_script_directory(self.scripts_dir)
-        self.assertEqual(self.ch.reply("local", u"The number is 9"), "pass1")
-        self.assertEqual(self.ch.reply("local", u"The letter is x"), "pass2")
-        self.assertEqual(self.ch.reply("local", u"The mistake is"), "star")
-        self.assertEqual(self.ch.reply("local", u"I need 1 green z"), "pass3")
-        self.assertEqual(self.ch.reply("local", u"Say it"), "number 5 color blue letter x")
-        self.assertEqual(self.ch.reply("local", u"Check it"), "pass4")
-        self.assertEqual(self.ch.reply("local", u"Check it"), "star")
+        conversation = [("local", u"The number is 9", u"pass1"),
+                        ("local", u"The letter is x", u"pass2"),
+                        ("local", u"The mistake is", u"star"),
+                        ("local", u"I need 1 green z", u"pass3"),
+                        ("local", u"Say it", u"number 5 color blue letter x"),
+                        ("local", u"Check it", u"pass4"),
+                        ("local", u"Check it", u"star")]
         
-        self.assertFalse(self.errorlogger.called)        
+        self.have_conversation(py, conversation)
         
     def test_Reply_RecursivelyExpandsRuleReplies(self):
         py = self.py_imports + """
@@ -325,10 +312,7 @@ class TestScript(Script):
     def rule_three(self):
         return "three"    
 """
-        self.write_py(py)
-        self.ch.load_script_directory(self.scripts_dir)
-        self.assertEqual(self.ch.reply("local", u"count"), u"one two three")
-        self.assertFalse(self.errorlogger.called)
+        self.have_conversation(py, [("local", u"count", u"one two three")])
         
     def test_Reply_Error_OnRuntimeErrorInRule(self):
         py = self.py_imports + """
@@ -417,11 +401,44 @@ class TestScript(Script):
                      u'I just said "Nice to meet you!"'),
             (u"two", u"My name is Test Two", u"Nice to meet you!"),
             (u"one", u"What is my name?", u"Your name is Test One.")]
+        self.have_conversation(py, conversation)
+
+    def test_Reply_LimitsRuleSelectionByTopic(self):
+        py = self.py_imports + """
+class TestScriptMain(Script):
+    @rule("change topic")
+    def rule_change_topic(self):
+        Script.set_topic("test")
+        return "changed to test"
+    @rule("topic")
+    def rule_topic(self):
+        return "all star"
+
+class TestScriptTest(Script):
+    topic = "test"
+    @rule("change topic")
+    def rule_change_topic(self):
+        Script.set_topic("all")
+        return "changed to all"
+    @rule("topic")
+    def rule_topic(self):
+        return "test star"
+"""
+        conversation = [(0, u"topic", u"all star"),
+                        (0, u"change topic", u"changed to test"),
+                        (0, u"topic", u"test star"),
+                        (0, u"change topic", u"changed to all"),
+                        (0, u"topic", u"all star")]
+        self.have_conversation(py, conversation)
+        
+
+    def have_conversation(self, py, conversation):
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
         for user, msg, rep in conversation:
             self.assertEqual(self.ch.reply(user, msg), rep)
         self.assertFalse(self.errorlogger.called)
+        
         
     def write_py(self, py, filename="test.py"):
         filename = os.path.join(self.scripts_dir, filename)

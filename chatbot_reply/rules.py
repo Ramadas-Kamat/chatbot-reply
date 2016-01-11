@@ -69,8 +69,9 @@ class Rule(object):
             previous = "previous "
             self.previous = Pattern(raw_previous, alternates, say=say)
         except (PatternError, PatternVariableValueError,\
-               PatternVariableNotFoundError) as e:
-            e.args += (u" in {0}pattern of {1}.".format(previous, rulename),)
+               PatternVariableNotFoundError) as e: 
+            msg = " in {0}pattern of {1}".format(previous, rulename)
+            e.args = (e.args[0] + msg,) + e.args[1:]
             raise
 
         self.weight = weight
@@ -199,7 +200,7 @@ class RulesDB(object):
 
         if sum([len(t.rules) for k, t in self.topics.items()]) == 0:
             raise NoRulesFoundError(
-                u"No rules were found in {0}/*.py".format(directory))
+                "No rules were found in {0}/*.py".format(directory))
                 
     def _import(self, filename):
         """Import a python module, given the filename, but to avoid creating
@@ -230,15 +231,15 @@ class RulesDB(object):
             if tup in self.topics[topic].rules:
                 existing_rule = self.topics[topic].rules[tup]
                 if rule.method != existing_rule.method:
-                    self._say(u'Ignoring rule "{0[0]}","{0[1]}" at {1} '
-                          u'because it is a duplicate of the rule {2} '
-                          u'for the topic "{3}".'.format(tup,
+                    self._say('Ignoring rule "{0[0]}","{0[1]}" at {1} '
+                              'because it is a duplicate of the rule {2} '
+                              'for the topic "{3}".'.format(tup,
                               rule.rulename, existing_rule.rulename, topic),
                           warning = "Warning")
             else:
                 self.topics[topic].rules[tup] = rule
-                self._say(u'Loaded pattern "{0[0]}", previous="{0[1]}", ' 
-                          u'weight={1}, method={2}'.format(tup, rule.weight,
+                self._say('Loaded pattern "{0[0]}", previous="{0[1]}", ' 
+                          'weight={1}, method={2}'.format(tup, rule.weight,
                                                            rule.rulename))
            
 
@@ -281,7 +282,7 @@ class RulesDB(object):
     def _validate_alternates(self, alternates, script_class_name):
         if not isinstance(alternates, dict):
             raise InvalidAlternatesError(
-                u"self.alternates is not a dictionary in {0}.".format(
+                "self.alternates is not a dictionary in {0}.".format(
                     script_class_name))
         valid = {}
         for k, v in alternates.items():
@@ -291,9 +292,10 @@ class RulesDB(object):
             try:
                 valid[k] = Pattern(v, simple=True,
                                    say=self._say).formatted_pattern
-            except PatternError as e:
-                e.args += (u' in alternates["{0}"] '
-                           'of {1}.'.format(k, script_class_name),)
+            except PatternError as e: 
+                msg = ' in alternates["{0}"] of {1}'.format(k,
+                                                             script_class_name)
+                e.args = (e.args[0] + msg,) + e.args[1:]
                 raise
         return {"a":valid}
 
@@ -328,9 +330,11 @@ class RulesDB(object):
                                    reverse=True)
         self.rules_sorted = True
         self._say("-"*20 + "Sorted rules" + "-"*20)
-        for r in t.sortedrules:
-            self._say('"{0}"/"{1}"'.format(r.pattern.formatted_pattern,
-                                           r.previous.formatted_pattern))
+        for n, t in self.topics.items():
+            self._say("Topic: {0}".format(n))
+            for r in t.sortedrules:
+                self._say('"{0}"/"{1}"'.format(r.pattern.formatted_pattern,
+                                               r.previous.formatted_pattern))
         self._say("-"*52)
 
     
@@ -344,7 +348,7 @@ def get_rule_method_spec(name, method):
     """
     if not hasattr(method, '__call__'):
         raise RuleMethodSpecError(
-            u"{0} begins with 'rule' but is not callable.".format(
+            "{0} begins with 'rule' but is not callable.".format(
                 name))
     argspec = inspect.getargspec(method)
     if (len(argspec.args) != 4 or
@@ -352,7 +356,7 @@ def get_rule_method_spec(name, method):
         argspec.varargs is not None or
         argspec.keywords is not None or
         len(argspec.defaults) != 3):
-        raise RuleMethodSpecError(u"{0} was not decorated by @rule "
+        raise RuleMethodSpecError("{0} was not decorated by @rule "
                  "or it has the wrong number of arguments.".format(name))
     return argspec
 
