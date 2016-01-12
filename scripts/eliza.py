@@ -40,7 +40,7 @@ class ElizaScript(Script):
                  "i'm":"you are", "was":"were"}
         text = text.rstrip(string.punctuation)
         words = text.split()
-        words = [swaps[w.lower()] if w.lower() in swaps else w for w in words]
+        words = [swaps.get(w.lower(), w) for w in words]
         return " ".join(words)
 
     def choose(self, args):
@@ -69,7 +69,7 @@ class ElizaScript(Script):
         return ["Goodbye. It was nice talking to you.",
                 "Goodbye. I'm looking forward to the next time we talk."
                 "It was nice talking to you. Goodbye.",
-                "Maybe we could discuss this more next time? Goodbye."]
+                "Maybe we could talk about this more next time? Goodbye."]
 
     @rule("*")
     def rule_star(self):
@@ -77,8 +77,8 @@ class ElizaScript(Script):
             memory = self.reflect(self.uservars["Eliza remembers"].pop())
             return self.choose([
                 "Does that have anything to do with the fact that your {0}?",
-                "Let's discuss further why your {0}.",
-                "Earlier you said your {0}.",
+                "Let's talk more why your {0}.",
+                "Before you said your {0}.",
                 "But your {0}."]).format(memory)
         else:
             return ["I'm not sure I understand you fully.",
@@ -91,7 +91,7 @@ class ElizaScript(Script):
 
     @rule("[*] (sorry|apologize) [*]", weight=2)
     def rule_sorry(self):
-        return ["Please don't apologise.",
+        return ["Please don't apologize.",
                 "Apologies are not necessary.",
                 "I've told you that apologies are not required.",
                 "It did not bother me. Please continue."]
@@ -160,7 +160,7 @@ class ElizaScript(Script):
     def rule_dream(self):
         return ["What does that dream suggest to you?",
                 "Do you dream often?",
-                "What persons appear in your dreams?",
+                "What people appear in your dreams?",
                 "Do you believe that dreams have something to do with your problem?"]
 
     @rule("[*] maybe *", weight=2)
@@ -218,7 +218,7 @@ class ElizaScript(Script):
     def rule_are_you(self):
         return ["Why are you interested in whether I am {refl_raw_match0} or not?",
                 "Would you prefer if I weren't {refl_raw_match0}?",
-                "Perhaps I am {refl_raw_match0} in your fantasies.",
+                "Maybe I am {refl_raw_match0} in your fantasies.",
                 "Do you sometimes think I am {refl_raw_match0}?",
                 "<what>",
                 "Would it matter to you?",
@@ -242,7 +242,7 @@ class ElizaScript(Script):
                 "What makes you think of my {refl_raw_match0}?",
                 "Do you want my {refl_raw_match0}?"]
 
-    @rule("[*] was i _*", weight=3)
+    @rule("[*] (was i|i was) _*", weight=3)
     def rule_was_i(self):
         return ["What if you were {refl_raw_match0}?",
                 "Do you think you were {refl_raw_match0}?",
@@ -251,22 +251,12 @@ class ElizaScript(Script):
                 'What does "{refl_raw_match0}" suggest to you?',
                 "<what>"]
 
-    @rule("[*] i was _*", weight=3)
-    def rule_i_was(self):
-        return ["What if you were {refl_raw_match0}?",
-                "Do you think you were {refl_raw_match0}?",
-                "Were you {refl_raw_match0}?",
-                "What would it mean if you were {refl_raw_match0}?",
-                'What does "{refl_raw_match0}" suggest to you?',
-                "<what>"]
-    
-
     @rule("[*] were you _*", weight=3)
     def rule_were_you(self):
         return ["Would you like to believe I was {refl_raw_match0}?",
                 "What suggests that I was {refl_raw_match0}?",
                 "What do you think?",
-                "Perhaps I was {refl_raw_match0}.",
+                "Maybe I was {refl_raw_match0}.",
                 "What if I had been {refl_raw_match0}?"]
 
     @rule("[*] i %a:desire _*")
@@ -335,7 +325,7 @@ class ElizaScript(Script):
 
     @rule("[*] i _* you [*]")
     def rule_i_you(self):
-          return ["Perhaps in your fantasies we {refl_raw_match0} each other.",
+          return ["Maybe in your fantasies we {refl_raw_match0} each other.",
                   "Do you wish to {refl_raw_match0} me?",
                   "You seem to need to {refl_raw_match0} me.",
                   "Do you {refl_raw_match0} anyone else?"]
@@ -343,9 +333,9 @@ class ElizaScript(Script):
     @rule("_([*] i [*])")
     def rule_i(self):
         return ["You say {refl_raw_match0}?",
-                "Can you elaborate on that?",
+                "Can you tell me more about that?",
                 "Do you say {refl_raw_match0} for some special reason?",
-                "That's quite interesting."]
+                "That's very interesting."]
 
 
     @rule("[*] you remind me of _*")
@@ -355,9 +345,9 @@ class ElizaScript(Script):
     @rule("[*] you are _*")
     def rule_you_are(self):
         return ["What makes you think I am {refl_raw_match0}?",
-                "Does it please you to believe I am {refl_raw_match0}?",
+                "Do you like to believe I am {refl_raw_match0}?",
                 "Do you sometimes wish you were {refl_raw_match0}?",
-                "Perhaps you would like to be {refl_raw_match0}."]
+                "Maybe you would like to be {refl_raw_match0}."]
 
     @rule("[*] you _* me *")
     def rule_you_me(self):
@@ -408,7 +398,7 @@ class ElizaScript(Script):
                 "Does that suggest anything else which belongs to you?",
                 "Is it important to you that your {refl_raw_match0}?"]
 
-    @rule("[*] my [*] _%a:family _*")
+    @rule("[*] my [*] _%a:family _*", weight=3)
     def rule_my_family(self):
         return ["Tell me more about your family.",
                 "Who else in your family {refl_raw_match1}?",
