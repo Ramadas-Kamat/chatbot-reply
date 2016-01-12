@@ -33,7 +33,8 @@ matches 1-3 words containing only alphanumerics
 
 pattern("i like %u:uservar")
 matches whatever uservar is set to.
-uservar could be a simplified pattern containing anything but a % or _
+uservar could be a simplified pattern containing anything but a % or _ or
+wildcard
 variable names have to be alphanumeric and can't start with a number
 
 pattern("hey %b:botname")
@@ -43,8 +44,8 @@ pattern("I like (red|blue|green) cars")
 matches "I like red cars"
 
 pattern("My _* is _*")
-you can access memorized matches with match[0], match[1] etc.
-the original text is original[0], original[1]
+you can access memorized matches with self.match["match0"],
+self.match["match1"] etc. The original text is raw_match0, raw_match1
 _ can be used before variables, wildcards, alternates and optionals
 
 Possible future syntax:

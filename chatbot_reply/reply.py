@@ -12,6 +12,8 @@ from __future__ import unicode_literals
 import collections
 import re
 
+from builtins import object, str, zip
+
 from .constants import _HISTORY
 from .patterns import Pattern
 from .rules import Rule, RulesDB
@@ -70,7 +72,7 @@ class ChatbotEngine(object):
         self._depth_limit = depth
 
         self.botvars = {}
-        self.botvars["debug"] = unicode(debug)
+        self.botvars["debug"] = str(debug)
         
         self._variables = {"b" : self.botvars,
                            "u" : None}
@@ -115,7 +117,8 @@ class ChatbotEngine(object):
         self._say('Asked to reply to: "{0}" from {1}'.format(message, user))
         self._set_user(user)
         Script.botvars = self.botvars
-        if not isinstance(message, unicode):
+        if not isinstance(message, str):
+            print(str(type(message)))
             raise TypeError("message argument must be unicode, not str")
 
         reply = self._reply(user, message, 0)
@@ -140,7 +143,7 @@ class ChatbotEngine(object):
                     rule.rulename))
                 Script.match = m.dict
                 reply = rule.method()
-                if not isinstance(reply, unicode):
+                if not isinstance(reply, str):
                     raise TypeError("Rule {0} returned something other than a "
                                     "unicode string.".format(rule.rulename))
                 self._say('Rule {0} returned "{1}"'.format(
@@ -176,7 +179,7 @@ class ChatbotEngine(object):
             begin, end = match.span()
             rep = self._reply(user, reply[begin + 1:end - 1], depth + 1)
             sub_replies.append(rep)
-        zipper = zip(matches, sub_replies)
+        zipper = list(zip(matches, sub_replies))
         zipper.reverse()
         for match, rep in zipper:
             begin, end = match.span()

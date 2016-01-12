@@ -10,6 +10,9 @@ from functools import wraps
 import inspect
 import random
 
+from future.utils import with_metaclass
+from builtins import object
+
 from .exceptions import *
 from .constants import _PREFIX
 
@@ -21,7 +24,7 @@ def rule(pattern_text, previous="", weight=1):
             result = func(self)
             try:
                 return self.matches_format(self.choose(result))
-            except Exception, e:
+            except Exception as e:
                 name = (func.__module__[len(_PREFIX):] + "." +
                         self.__class__.__name__ + "." + func.__name__)
                 msg = (" in @rule while processing return value "
@@ -43,9 +46,7 @@ class ScriptRegistrar(type):
     def clear(cls):
         cls.registry = []
 
-class Script(object):
-    __metaclass__ = ScriptRegistrar
-
+class Script(with_metaclass(ScriptRegistrar, object)):
     topic = "all"
     botvars = None
     uservars = None

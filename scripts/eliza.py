@@ -44,7 +44,7 @@ class ElizaScript(Script):
         return " ".join(words)
 
     def choose(self, args):
-        if isinstance(args, list) and args and isinstance(args[0], unicode):
+        if isinstance(args, list) and args and isinstance(args[0], str):
             counted_args = [(string,
                              self.uservars["Eliza replies"].get(string, 0))
                             for string in args]

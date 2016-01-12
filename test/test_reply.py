@@ -9,6 +9,7 @@
 """
 from __future__ import print_function
 import os
+import shutil
 import tempfile
 import unittest
 
@@ -45,16 +46,14 @@ class ChatbotEngineTestCase(unittest.TestCase):
                                 errorlogger=self.errorlogger)
         self.scripts_dir = tempfile.mkdtemp()
 
-        self.py_imports = """
+        self.py_imports = b"""
 from __future__ import unicode_literals
 from chatbot_reply import Script, rule
 """
-        self.py_encoding = "# coding=utf-8\n"
+        self.py_encoding = b"# coding=utf-8\n"
 
     def tearDown(self):
-        for item in os.listdir(self.scripts_dir):
-            os.remove(os.path.join(self.scripts_dir, item))
-        os.rmdir(self.scripts_dir)
+        shutil.rmtree(self.scripts_dir)
 
     def test_Load_RaisesOSError_OnInvalidDirectory(self):
         self.assertRaises(OSError,
@@ -67,13 +66,13 @@ from chatbot_reply import Script, rule
                           self.scripts_dir)
 
     def test_Load_RaisesSyntaxError_OnBrokenScript(self):
-        self.write_py("if True\n\tprint 'syntax error'\n")
+        self.write_py(b"if True\n\tprint 'syntax error'\n")
         self.assertRaises(SyntaxError,
                           self.ch.load_script_directory,
                           self.scripts_dir)
 
     def test_Load_RaisesNoRulesFoundError_On_NoRules(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     pass
 """
@@ -82,7 +81,7 @@ class TestScript(Script):
                           self.scripts_dir)
 
     def test_Load_Warning_On_DuplicateRules(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("hello")
     def rule_foo(self):
@@ -94,7 +93,7 @@ class TestScript(Script):
         self.assertEqual(self.errorlogger.call_count, 1)
         
     def test_Load_RaisesPatternError_On_MalformedPattern(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("(_)")
     def rule_foo(self):
@@ -106,7 +105,7 @@ class TestScript(Script):
                           self.scripts_dir)
         
     def test_Load_RaisesRuleMethodSpecError_On_UndecoratedMethod(self):
-        py = self.py_imports +  """
+        py = self.py_imports + b"""
 class TestScript(Script):
     def rule_foo(self):
         pass
@@ -117,7 +116,7 @@ class TestScript(Script):
                           self.scripts_dir)
 
     def test_LoadClearLoad_WorksWithoutComplaint(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("hello")
     def rule_foo(self):
@@ -130,7 +129,7 @@ class TestScript(Script):
         self.assertFalse(self.errorlogger.called)
 
     def test_Load_Raises_OnMalformedAlternates(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     def setup(self):
         self.alternates = "(hello|world)"
@@ -144,7 +143,7 @@ class TestScript(Script):
                           self.scripts_dir)
 
     def test_Load_RaisesPatternError_OnBadPatternInAlternates(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     def setup(self):
         self.alternates = {"foo": "(hello|world]"}
@@ -159,7 +158,7 @@ class TestScript(Script):
         
 
     def test_Load_RaisesNoRulesFoundError_OnTopicNone(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     def setup(self):
         self.topic = None
@@ -172,11 +171,11 @@ class TestScript(Script):
                           self.ch.load_script_directory,
                           self.scripts_dir)
 
-    def test_Load_Raises_WhenRulePassedStr(self):
-        py = """
+    def test_Load_Raises_WhenRulePassedByteStr(self):
+        py = b"""
 from chatbot_reply import Script, rule
 class TestScript(Script):
-    @rule("hello")
+    @rule(b"hello")
     def rule_foo(self):
         pass
 """
@@ -187,7 +186,7 @@ class TestScript(Script):
         
 
     def test_Reply_Passes_MatchedText(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("the number is _# and the word is _@")
     def rule_and_word(self):
@@ -216,7 +215,7 @@ class TestScript(Script):
         self.have_conversation(py, conversation)
 
     def test_Reply_Matches_RuleWithPrevious(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("_*")
     def rule_star(self):
@@ -233,7 +232,7 @@ class TestScript(Script):
         self.assertFalse(self.errorlogger.called)
 
     def test_Reply_Raises_WithBadRuleReturnString(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("do you like _*")
     def rule_foo(self):
@@ -246,7 +245,7 @@ class TestScript(Script):
         
 
     def test_Reply_Matches_RuleWithAlternate(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     def __init__(self):
         self.alternates = {"numbers" : "(1|3|5|7|9)"}
@@ -260,7 +259,7 @@ class TestScript(Script):
         self.have_conversation(py, [("local", u"The number is 5", "pass")])
         
     def test_Reply_Matches_RuleWithVariableExpansion(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     def setup(self):
         self.botvars["numbers"] = "(1|3|5|7|9)"
@@ -300,7 +299,7 @@ class TestScript(Script):
         self.have_conversation(py, conversation)
         
     def test_Reply_RecursivelyExpandsRuleReplies(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("count")
     def rule_foo(self):
@@ -315,7 +314,7 @@ class TestScript(Script):
         self.have_conversation(py, [("local", u"count", u"one two three")])
         
     def test_Reply_Error_OnRuntimeErrorInRule(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("*")
     def rule_foo(self):
@@ -323,10 +322,10 @@ class TestScript(Script):
 """
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
-        self.assertRaises(NameError, self.ch.reply, "local", unicode("test"))
+        self.assertRaises(NameError, self.ch.reply, "local", u"test")
         
     def test_Reply_Chooses_HigherScoringRule(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("hello *")
     def rule_test1(self):
@@ -363,7 +362,7 @@ class TestScript(Script):
         self.assertFalse(self.errorlogger.called)
 
     def test_Reply_Error_OnInfiniteRecursion(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("one")
     def rule_one(self):
@@ -378,7 +377,7 @@ class TestScript(Script):
                           self.ch.reply, "local", u"one")
 
     def test_Reply_RespondsCorrectly_ToTwoUsers(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScript(Script):
     @rule("my name is _@~3")
     def rule_name(self):
@@ -404,7 +403,7 @@ class TestScript(Script):
         self.have_conversation(py, conversation)
 
     def test_Reply_LimitsRuleSelectionByTopic(self):
-        py = self.py_imports + """
+        py = self.py_imports + b"""
 class TestScriptMain(Script):
     @rule("change topic")
     def rule_change_topic(self):
@@ -430,7 +429,6 @@ class TestScriptTest(Script):
                         (0, u"change topic", u"changed to all"),
                         (0, u"topic", u"all star")]
         self.have_conversation(py, conversation)
-        
 
     def have_conversation(self, py, conversation):
         self.write_py(py)
@@ -439,11 +437,10 @@ class TestScriptTest(Script):
             self.assertEqual(self.ch.reply(user, msg), rep)
         self.assertFalse(self.errorlogger.called)
         
-        
     def write_py(self, py, filename="test.py"):
         filename = os.path.join(self.scripts_dir, filename)
         with open(filename, "wb") as f:
-            f.write(py + "\n")
+            f.write(py + b"\n")
 
 if __name__ == "__main__":
     unittest.main()

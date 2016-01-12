@@ -5,6 +5,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """ Unit tests for Python Chatbot Reply Generator's Pattern Parser """
+from __future__ import print_function
 from __future__ import unicode_literals
 
 from chatbot_reply.patterns import ParsedPattern
@@ -47,15 +48,15 @@ class PatternParserTestCase(unittest.TestCase):
         """ asserts and prints out what the argument was """
         try:
             func(arg)
-            print 'Failed on "{0}"'.format(arg)
+            print('Failed on "{0}"'.format(arg))
             self.assertFalse(True)
         except error:
             pass
         except Exception as e:
-            print 'Failed on "{0}" with {1}'.format(arg, e)
-            print '-'*60
+            print('Failed on "{0}" with {1}'.format(arg, e))
+            print('-'*60)
             traceback.print_exc(file=sys.stdout)
-            print '-'*60
+            print('-'*60)
 
             self.assertFalse(True)
 
@@ -143,14 +144,14 @@ class PatternParserTestCase(unittest.TestCase):
             for good in p[1]:
                 match = re.match(regexc, good)
                 if match is None:
-                    print 'Failed to match "{0}" with "{1}" using regex "{2}"'.format(
-                        pattern, good, regex)
+                    print('Failed to match "{0}" with "{1}" using regex "{2}"'.format(
+                        pattern, good, regex))
                     self.assertFalse(True)
             for bad in p[2]:
                 match = re.match(regexc, bad)
                 if match is not None:
-                    print 'Matched incorrectly "{0}" with "{1}" using regex "{2}"'.format(
-                        pattern, bad, regex)
+                    print('Matched incorrectly "{0}" with "{1}" using regex "{2}"'.format(
+                        pattern, bad, regex))
                     self.assertFalse(True)
 
     def test_PP_Scoring(self):
@@ -177,18 +178,18 @@ class PatternParserTestCase(unittest.TestCase):
             regex = ParsedPattern(p[0]).regex(None)
             m = re.match(regex, p[1])
             if m is None:
-                print "Failed to match {0} with {1}".format(p[0], p[1])
+                print("Failed to match {0} with {1}".format(p[0], p[1]))
                 self.assertTrue(m is not None)
             d = m.groupdict()
             if len(p[2]) != len(d):
-                print "Matched {0} with {1} and got {2}".format(
-                    p[0], p[1], d)
+                print("Matched {0} with {1} and got {2}".format(
+                    p[0], p[1], d))
                 self.assertTrue(False)
 
             for i in range(len(d)):
                 if d["match"+str(i)] != p[2][i]:
-                    print "Matched {0} with {1} and got {2}".format(
-                        p[0], p[1], d)
+                    print("Matched {0} with {1} and got {2}".format(
+                        p[0], p[1], d))
                     self.assertTrue(False)                    
                    
             

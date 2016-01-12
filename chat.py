@@ -6,6 +6,8 @@
 """ Example use of chatbot_reply module, simple interactive mode """
 from __future__ import print_function
 from __future__ import unicode_literals
+from builtins import str, input
+
 from chatbot_reply import ChatbotEngine
 
 if __name__ == "__main__":
@@ -15,14 +17,14 @@ if __name__ == "__main__":
            "/botvars or /uservars to see values of variables, "
            "/reload to reload the scripts directory.")
     while True:
-        msg = raw_input("You> ")
+        msg = str(input("You> "))
         if msg == "/quit":
             break
         elif msg == "/botvars":
-            print(unicode(ch.botvars))
+            print(str(ch.botvars))
         elif msg == "/uservars":
             if "local" in ch.users:
-                print(unicode(ch.users["local"].vars))
+                print(str(ch.users["local"].vars))
             else:
                 print("No user variables have been defined.")
         elif msg == "/reload":
@@ -34,4 +36,4 @@ if __name__ == "__main__":
             else:
                 ch.botvars["debug"] = "True"
         else:
-            print("Bot> " + ch.reply("local", unicode(msg, 'utf-8')))
+            print("Bot> " + ch.reply("local", msg))

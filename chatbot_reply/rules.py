@@ -13,6 +13,8 @@ import imp
 import inspect
 import os
 
+from builtins import object, str
+
 from .constants import _PREFIX
 from .exceptions import *
 from .patterns import Pattern
@@ -92,11 +94,11 @@ class Rule(object):
                       to substitute into the patterns
         """
         m = self.pattern.match(target.normalized, variables)
-
         if m is None:
             return None
         mp = None
         reply_target = None
+
         if self.previous:
             if not history:
                 return None
@@ -286,7 +288,7 @@ class RulesDB(object):
                     script_class_name))
         valid = {}
         for k, v in alternates.items():
-            if not (isinstance(k, unicode) and isinstance(v, unicode)):
+            if not (isinstance(k, str) and isinstance(v, str)):
                 raise TypeError("self.alternates contains non-unicode strings "
                                 "in {0}".format(script_class_name))
             try:
@@ -311,8 +313,8 @@ class RulesDB(object):
         argspec = get_rule_method_spec(rulename, method)
 
         raw_pattern, raw_previous, weight = argspec.defaults
-        if not (isinstance(raw_pattern, unicode) and
-                isinstance(raw_previous, unicode)):
+        if not (isinstance(raw_pattern, str) and
+                isinstance(raw_previous, str)):
             raise TypeError("@rule given non-unicode string in {0}".format(
                 rulename))
         return Rule(raw_pattern, raw_previous, weight, alternates,
