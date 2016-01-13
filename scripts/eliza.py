@@ -22,7 +22,7 @@ class ElizaScript(Script):
         self.alternates = {
             "be"       : "(am|is|are|was|be)",
             "belief"   : "(feel|think|believe|wish|belief)",
-            "cannot"   : "(can not|cant|cannot)",
+            "cannot"   : "(can not|cannot)",
             "desire"   : "(want|need|desire)",
             "everyone" : "(everybody|nobody|everyone)",
             "family"   : "(mother|mom|father|dad|sister|brother|wife|husband|"
@@ -37,13 +37,18 @@ class ElizaScript(Script):
     def reflect(self, text):
         swaps = {"am":"are", "your":"my", "me":"you", "myself":"yourself",
                  "yourself":"myself", "i":"you", "you":"I", "my":"your",
-                 "i'm":"you are", "was":"were"}
+                 "was":"were", "you're": "I'm", "i'm": "you're",
+                 "i've": "you've", "you've" : "I've"}
         text = text.rstrip(string.punctuation)
         words = text.split()
         words = [swaps.get(w.lower(), w) for w in words]
         return " ".join(words)
 
     def choose(self, args):
+        """This version of choose maintains a dictionary of responses that 
+        have already been used, in self.uservars, and will select from the
+        least-used responses available. 
+        """
         if isinstance(args, list) and args and isinstance(args[0], str):
             counted_args = [(string,
                              self.uservars["Eliza replies"].get(string, 0))
@@ -56,7 +61,25 @@ class ElizaScript(Script):
         else:
             return super(ElizaScript, self).choose(args)
 
-    def matches_format(self, string):
+    def substitute(self, text, wordlists):
+        contractions = {"don't":"do not", "can't":"can not", "won't":"will not",
+                        "you're":"you are", "i'm" : "i am",
+                        "i've" : "i have", "you've" : "you have"}
+        results = []
+        for wl in wordlists:
+            new = []
+            for word in wl:
+                stripped = word.lower().rstrip(string.punctuation)
+                new_word = contractions.get(stripped, word)
+                new.extend(new_word.split())
+            results.append(new)
+        return results
+
+    def process_reply(self, string):
+        """This version of process_reply does Eliza style swapping of first and
+        second person, and creates a match dictionary containing swapped versions
+        of all the match variables that it then passes to str.format
+        """
         reflected_matches = {}
         for k, v in self.match.items():
             reflected_matches[k] = v
@@ -269,14 +292,14 @@ class ElizaScript(Script):
                 "What does wanting {refl_raw_match0} have to do with this "
                     "discussion?"]
 
-    @rule("[*] (i am|im) _%a:sad [*]")
+    @rule("[*] i am _%a:sad [*]")
     def rule_im_sad(self):
         return ["I am sorry to hear that you are {match0}.",
                 "Do you think coming here will help you not to be {match0}?",
                 "I'm sure it's not pleasant to be {match0}.",
                 "Can you explain what made you {match0}?"]
 
-    @rule("[*] (i am|im) _%a:happy [*]")
+    @rule("[*] i am _%a:happy [*]")
     def rule_im_happy(self):
         return ["How have I helped you to be {match0}?",
                 "Has your treatment made you {match0}?",
@@ -293,7 +316,7 @@ class ElizaScript(Script):
     def rule_belief_you(self):
         return "<you {raw_match0}>"
 
-    @rule("[*] (i am|im) _*")
+    @rule("[*] i am _*")
     def rule_i_am(self):
         return ["Is it because you are {refl_raw_match0} that you came to me?",
                 "How long have you been {refl_raw_match0}?",
@@ -309,7 +332,7 @@ class ElizaScript(Script):
                 "Do you really want to be able to {refl_raw_match0}?",
                 "What if you could {refl_raw_match0}?"]
     
-    @rule("[*] i dont _*")
+    @rule("[*] i do not _*")
     def rule_i_dont(self):
         return ["Don't you really {refl_raw_match0}?",
                 "Why don't you {refl_raw_match0}?",
@@ -432,7 +455,7 @@ class ElizaScript(Script):
                 "Have you asked anyone else?"]
 
 
-    @rule("[*] why dont you _*")
+    @rule("[*] why do not you _*")
     def rule_why_dont_you(self):
         return ["Do you believe I don't {refl_raw_match0}?",
                 "Perhaps I will {refl_raw_match0} in good time.",
@@ -440,7 +463,7 @@ class ElizaScript(Script):
                 "You want me to {refl_raw_match0}?",
                 "<what>"]
 
-    @rule("[*] why cant i _*")
+    @rule("[*] why can not i _*")
     def rule_why_cant_i(self):
         return ["Do you think you should be able to {refl_raw_match0}?",
                 "Do you want to be able to {refl_raw_match0}?",

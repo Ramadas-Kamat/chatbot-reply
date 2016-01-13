@@ -16,9 +16,7 @@ import unittest
 from mock import Mock
 
 from chatbot_reply import ChatbotEngine
-from chatbot_reply import NoRulesFoundError, InvalidAlternatesError
-from chatbot_reply import PatternError, RuleMethodSpecError
-from chatbot_reply import RecursionTooDeepError
+from chatbot_reply import PatternError, RecursionTooDeepError, NoRulesFoundError
 from chatbot_reply.reply import Target
 
 class TargetTestCase(unittest.TestCase):
@@ -31,7 +29,7 @@ class TargetTestCase(unittest.TestCase):
         problems = [r"ABC_abc 123 !@#$%^&**()-=+|}{[]\~~`';:/.,<>?", "",
                     "Apples, oranges and bananas!", "This one isn't as hard"]
         for p in problems:
-            t = Target(p, say=None)
+            t = Target(p, [], say=None)
             self.assertEqual(t.raw_text, p)
             self.assertEqual(len(t.raw_words), len(t.tokenized_words))
             for wl in t.tokenized_words:
@@ -100,29 +98,31 @@ class TestScript(Script):
         pass
 """
         self.write_py(py)
-        self.assertRaises(PatternError,
+        self.assertRaisesCheckMessage(PatternError, "test.TestScript.rule_foo",
                           self.ch.load_script_directory,
                           self.scripts_dir)
         
-    def test_Load_RaisesRuleMethodSpecError_On_UndecoratedMethod(self):
+    def test_Load_Raises_On_UndecoratedMethod(self):
         py = self.py_imports + b"""
 class TestScript(Script):
     def rule_foo(self):
         pass
 """
         self.write_py(py)
-        self.assertRaises(RuleMethodSpecError,
+        self.assertRaisesCheckMessage(TypeError, "test.TestScript.rule_foo",
                           self.ch.load_script_directory,
                           self.scripts_dir)
 
     def test_LoadClearLoad_WorksWithoutComplaint(self):
+        # this creates a file not closed warning on python 3, but
+        # I think it's python's bug not mine
         py = self.py_imports + b"""
 class TestScript(Script):
     @rule("hello")
     def rule_foo(self):
         pass
 """
-        self.write_py(py)
+        self.write_py(py, filename="loadclearload.py")
         self.ch.load_script_directory(self.scripts_dir)
         self.ch.clear_rules()
         self.ch.load_script_directory(self.scripts_dir)        
@@ -138,9 +138,10 @@ class TestScript(Script):
         pass
 """
         self.write_py(py)
-        self.assertRaises(InvalidAlternatesError,
-                          self.ch.load_script_directory,
-                          self.scripts_dir)
+        self.assertRaisesCheckMessage(AttributeError,
+                                      "alternates of test.TestScript",
+                                      self.ch.load_script_directory,
+                                      self.scripts_dir)
 
     def test_Load_RaisesPatternError_OnBadPatternInAlternates(self):
         py = self.py_imports + b"""
@@ -152,16 +153,16 @@ class TestScript(Script):
         pass
 """
         self.write_py(py)
-        self.assertRaises(PatternError,
-                          self.ch.load_script_directory,
-                          self.scripts_dir)
+        self.assertRaisesCheckMessage(PatternError,
+                                      'alternates["foo"] of test.TestScript',
+                                      self.ch.load_script_directory,
+                                      self.scripts_dir)
         
 
     def test_Load_RaisesNoRulesFoundError_OnTopicNone(self):
         py = self.py_imports + b"""
 class TestScript(Script):
-    def setup(self):
-        self.topic = None
+    topic = None
     @rule("hello")
     def rule_foo(self):
         pass
@@ -180,7 +181,7 @@ class TestScript(Script):
         pass
 """
         self.write_py(py)
-        self.assertRaises(TypeError,
+        self.assertRaisesCheckMessage(TypeError, "test.Testscript.rule_foo",
                           self.ch.load_script_directory,
                           self.scripts_dir)
         
@@ -240,8 +241,24 @@ class TestScript(Script):
 """
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
-        self.assertRaises(IndexError,
+        self.assertRaisesCheckMessage(IndexError, "test.TestScript.rule_foo",
                           self.ch.reply,"local", u"do you like spam")
+
+    def test_Reply_Raises_WithBadSubstitutionsReturnValue(self):
+        py = self.py_imports + b"""
+class TestScript(Script):
+    def substitute(self, text, things):
+        things.append(text)
+        return things
+    @rule("*")
+    def rule_star(self):
+        return "anything"
+"""
+        self.write_py(py)
+        self.ch.load_script_directory(self.scripts_dir)
+        self.assertRaisesCheckMessage(TypeError, "test.TestScript.rule_foo",
+                          self.ch.reply,"local", u"do you like spam")
+        
         
 
     def test_Reply_Matches_RuleWithAlternate(self):
@@ -313,7 +330,7 @@ class TestScript(Script):
 """
         self.have_conversation(py, [("local", u"count", u"one two three")])
         
-    def test_Reply_Error_OnRuntimeErrorInRule(self):
+    def test_Reply_Raises_OnRuntimeErrorInRule(self):
         py = self.py_imports + b"""
 class TestScript(Script):
     @rule("*")
@@ -373,7 +390,7 @@ class TestScript(Script):
 """
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
-        self.assertRaises(RecursionTooDeepError,
+        self.assertRaisesCheckMessage(RecursionTooDeepError, u"one",
                           self.ch.reply, "local", u"one")
 
     def test_Reply_RespondsCorrectly_ToTwoUsers(self):
@@ -430,6 +447,50 @@ class TestScriptTest(Script):
                         (0, u"topic", u"all star")]
         self.have_conversation(py, conversation)
 
+    def test_Reply_CallsSubstitutionsByTopic(self):
+        py = self.py_imports + b"""
+class TestScriptMain(Script):
+    def substitute(self, text, wordlists):
+        sub = {"3":"three"}
+        return [[sub.get(w, w) for w in wl] for wl in wordlists]
+    @rule("change topic")
+    def rule_change_topic(self):
+        Script.set_topic("test")
+        return "changed to test"
+    @rule("1 2 three")
+    def rule_topic(self):
+        return "pass all"
+
+class TestScriptTest(Script):
+    topic = "test"
+    def substitute(self, text, wordlists):
+        sub = {"1":"one"}
+        return [[sub.get(w, w) for w in wl] for wl in wordlists]
+    @rule("change topic")
+    def rule_change_topic(self):
+        Script.set_topic("all")
+        return "changed to all"
+    @rule("one 2 3")
+    def rule_topic(self):
+        return "pass test"
+"""
+        conversation = [(100, u"1 2 3", u"pass all"),
+                        (100, u"change topic", u"changed to test"),
+                        (100, u"1 2 3", u"pass test"),
+                        (100, u"change topic", u"changed to all"),
+                        (100, u"1 2 3", u"pass all")]
+        self.have_conversation(py, conversation)
+
+    def assertRaisesCheckMessage(self, expected_error, expected_message,
+                                 func, *args, **kwargs):
+        """ assert that an error is raised, and that something useful is in 
+        e.args[0]
+        """
+        try:
+            func(*args, **kwargs)
+        except expected_error as e:
+            self.assertNotEqual(e.args[0].find(expected_message), "")
+
     def have_conversation(self, py, conversation):
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
@@ -444,5 +505,3 @@ class TestScriptTest(Script):
 
 if __name__ == "__main__":
     unittest.main()
-
-    

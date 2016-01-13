@@ -5,7 +5,7 @@
 """ Exceptions for chatbot_reply
 """
 class PatternError(Exception):
-    """ Raised when PatternParser can't parse a pattern string"""
+    """ Raised when patterns.ParsedPattern can't parse a pattern string"""
     pass
 class PatternVariableNotFoundError(Exception):
     """ Raised when a user, bot or alternates variable is not found in a
@@ -22,20 +22,9 @@ class NoRulesFoundError(Exception):
     decorated by @pattern in any classes derived from Script in any .py files
     in a directory. """
     pass
-class RuleMethodSpecError(Exception):
-    """ Raised when ChatbotReply.load_script_directory finds a method whose name
-    begins with 'pattern' but which does not appear to have been decorated with
-    @pattern.
-    """
-    pass
 class RecursionTooDeepError(Exception):
-    """ Raised by ChatbotReply.reply when recursively expanding replies goes
+    """ Raised by reply.reply when recursively expanding replies goes
     over the recursion depth limit."""
-    pass
-class InvalidAlternatesError(Exception):
-    """ Raised by ChatbotReply.load_script_directory when a class instance 
-    derived from Script puts something other than a dictionary in 
-    self.alternates. """
     pass
 
 

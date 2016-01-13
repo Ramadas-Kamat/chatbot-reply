@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 # Copyright (c) 2016 Gemini Lasswell
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -15,16 +14,299 @@ import os
 
 from builtins import object, str
 
-from .constants import _PREFIX
-from .exceptions import *
-from .patterns import Pattern
-from .script import Script, ScriptRegistrar
+from chatbot_reply.constants import _PREFIX
+from chatbot_reply.exceptions import *
+from chatbot_reply.patterns import Pattern
+from chatbot_reply.script import Script, ScriptRegistrar
+
+class RulesDB(object):
+    """ Rules Database object. Reads directories of python files, and 
+    instantiates any subclasses of Script found therein and stores rules,
+    patterns and methods in Topic objects. 
+   
+    Public methods --
+    load_script_directory: Load python files from a directory into the
+        database
+    clear_rules: Empty the rules database
+
+    Public instance variables --
+    topics: dictionary of topic names (as found in Script subclasses) and
+        Topic objects built from those subclasses
+    script_instances: List containing one instance of each Script subclass
+        found, except for those with their topic set to None
+    """
+    def __init__(self, say=print):
+        """ Create a new empty RulesDB object. The say argument is a function
+        to call with debug output, which defaults to print, but may also be
+        set to None if you don't want to see any debug output. 
+        """
+        self._say = say if say is not None else lambda s:s
+        self.clear_rules()
+
+    def clear_rules(self):
+        """ Make a fresh new empty rules database. """
+        self.topics = {}
+        self.script_instances = []
+        self._new_topic("all")
+
+    def _new_topic(self, topic):
+        """ Add a new topic to the rules database. """
+        self.topics[topic] = Topic(self._say)
+ 
+    def load_script_directory(self, directory, botvars):
+        """Iterate through the .py files in a directory, and import all of
+        them. Then look for subclasses of Script and search them for
+        rules, and load those into self.topics.
+        botvars is a dictionary that loaded scripts can use to initialize
+        chatobt state
+
+        """
+        self.rules_sorted = False
+        ScriptRegistrar.clear()
+        Script.botvars = botvars
+        
+        for item in os.listdir(directory):
+            if item.lower().endswith(".py"):
+                self._say("Importing " + item)
+                filename = os.path.join(directory, item)
+                self._import(filename)
+
+        for cls in ScriptRegistrar.registry:
+            self._say("Loading scripts from" + cls.__name__)
+            self._add_to_rulesdb(cls)
+
+        if sum([len(t.rules) for k, t in self.topics.items()]) == 0:
+            raise NoRulesFoundError(
+                "No rules were found in {0}/*.py".format(directory))
+                
+    def _import(self, filename):
+        """Import a python module, given the filename, but to avoid creating
+        namespace conflicts give the module a name consisting of
+        _PREFIX + filename (minus any extension). 
+        """
+        global _PREFIX
+        path, name = os.path.split(filename)
+        name, ext = os.path.splitext(name)
+
+        self._say("Reading " + filename)
+        modname = _PREFIX + name
+        file, filename, data = imp.find_module(name, [path])
+        module = imp.load_module(modname, file, filename, data)
+        return module
+
+    def _add_to_rulesdb(self, script_class):
+        """Given a subclass of Script, create an instance of it.  If it's
+        topic is set to None, ignore it, otherwise search its
+        attributes for methods that begin with "rule" or "substitute"
+        and add those to the topic database.
+
+        """
+        instance = script_class()
+        topic = instance.topic
+        if topic == None: #this is the way to define a script superclass
+            return
+        if topic not in self.topics:
+            self._new_topic(topic)
+
+        instance.setup()
+        self.script_instances.append(instance)
+        
+        rules, substitutions = self._load_script_methods(instance)
+        self.topics[topic].add_rules(rules)
+        self.topics[topic].add_substitutions(substitutions)
+
+    def _load_script_methods(self, instance):
+        """Given an instance of a subclass of Script, find all of its methods
+        which begin with one of our keywords and add them to the rules
+        database for the topic of the script instance.
+
+        If the instance defines an alternates dictionary, substitute
+        those into the patterns of the rules.
+
+        """
+        script_class_name = (instance.__module__[len(_PREFIX):] + "." +
+                             instance.__class__.__name__)
+        alternates = {}
+        if hasattr(instance, "alternates"):
+            alternates = self._parse_alternates(instance.alternates,
+                                                script_class_name)
+        rules = []
+        substitutes = []
+        for attribute in dir(instance):
+            if attribute.startswith('rule'):
+                rule = self._load_rule(script_class_name, instance,
+                                       attribute, alternates)
+                rules.append(rule)
+            elif attribute.startswith('substitute'):
+                sub = self._load_substitution(script_class_name,
+                                              instance, attribute)
+                substitutes.append(sub)
+        return rules, substitutes
+   
+    def _parse_alternates(self, alternates, script_class_name):
+        """Construct Pattern objects for all the values in the alternates
+        instance variable (hopefully a dictionary) of a Script
+        subclass, and construct a dictionary of the keys from
+        alternates and the pattern object. Wrap that in another
+        dictionary keyed by 'a' so it can be used by %a:varname in
+        other patterns.
+
+        """
+        valid = {}
+        k = ""
+        try:
+            for k, v in alternates.items():
+                valid[k] = Pattern(v, simple=True,
+                                   say=self._say).formatted_pattern
+        except Exception as e:
+            msg = " in alternates"
+            if k:
+                msg += '["{0}"]'.format(k)
+            msg += " of {0}".format(script_class_name)
+            e.args = (e.args[0] + msg,) + e.args[1:]
+            raise
+        return {"a":valid}
+
+    def _load_rule(self, script_class_name, instance, attribute,
+                      alternates):
+        """ Given an instance of a class derived from Script and
+        a callable attribute, check that it is declared correctly, 
+        and then construct and return a Rule object.
+        """
+        method = getattr(instance, attribute)
+        rulename = script_class_name + "." + attribute
+
+        argspec = get_rule_method_spec(rulename, method)
+
+        raw_pattern, raw_previous, weight = argspec.defaults
+        return Rule(raw_pattern, raw_previous, weight, alternates,
+                    method, rulename, say=self._say)
+
+    def _load_substitution(self, script_class_name, instance, attribute):
+        """ Given an instance of a class derived from Script and
+        a callable attribute, check that it is declared correctly, 
+        and then return it as a tuple with its full name 
+        """
+        name = script_class_name + "." + attribute
+        method = getattr(instance, attribute)
+        check_substitution_method_spec(name, method)
+        return (name, method)
+
+    def sort_rules(self):
+        """ Sort the rules for each topic """
+        for topic in self.topics.values():
+            topic.sort_rules()
+        self._say_all_rules()
+
+    def _say_all_rules(self):
+        """ Print the rules lists to debug ouput """
+        self._say("-"*20 + "Sorted rules" + "-"*20)
+        for n, t in self.topics.items():
+            self._say("Topic: {0}".format(n))
+            t.say_sorted_rules()
+        self._say("-"*52)
+    
+
+def get_rule_method_spec(name, method):
+    """ Check that the passed argument spec matches what we expect the
+    @rule decorator in scripts.py to do. Raises TypeError
+    if a problem is found. If all is good, return the argspec
+    (see inspect.getargspec)
+    """
+    if not hasattr(method, '__call__'):
+        raise TypeError(
+            "{0} begins with 'rule' but is not callable.".format(
+                name))
+    argspec = inspect.getargspec(method)
+    if (len(argspec.args) != 4 or
+        " ".join(argspec.args) != "self pattern previous weight" or
+        argspec.varargs is not None or
+        argspec.keywords is not None or
+        len(argspec.defaults) != 3):
+        raise TypeError("{0} was not decorated by @rule "
+                 "or it has the wrong number of arguments.".format(name))
+    return argspec
+
+
+def check_substitution_method_spec(name, method):
+    """ Check that the passed argument spec matches what we expect a
+    substitute method in a subclass of Script to look like.
+    Raises TypeError if a problem is found. If all is good, return the argspec
+    (see inspect.getargspec)
+    """
+    if not hasattr(method, '__call__'):
+        raise TypeError(
+            "{0} begins with 'substitute' but is not callable.".format(
+                name))
+    argspec = inspect.getargspec(method)
+    if (len(argspec.args) != 3 or
+        argspec.varargs is not None or
+        argspec.keywords is not None):
+        raise TypeError("{0} was not decorated by @rule "
+                 "or it has the wrong number of arguments.".format(name))
+    return argspec
+    
 
 class Topic(object):
-    def __init__(self):
+    """ Topic object. Stores Rule objects and references to substitution
+    methods for each topic. 
+    Public instance variables:
+        rules : dictionary of Rule objects, indexed by tuples containing
+                the two formatted pattern strings of the rule
+        sortedrules : List of all the Rule objects from the dictionary,
+                in reverse sorted order by score
+        substitutions : List of substitution methods, in no particular
+                order. RulesDB puts tuples in here, (name, method)
+    """
+    def __init__(self, say=None):
+        """ Create a new empty Topic object.
+        Argument: say - a function to use for debug and warning output, or None.
+        """
+        self._say = say if say is not None else lambda *args, **kwargs:args
         self.rules = {}
+        self.rules_are_sorted = True
         self.sortedrules = []
+        self.substitutions = []
 
+    def add_rules(self, rules):
+        """ Add rules from a list to the rule dictionary. If there is already
+        a rule in there with the same two patterns, print a warning message
+        and ignore it.
+        """
+        self.rules_are_sorted = False
+        for rule in rules:
+            tup = (rule.pattern.formatted_pattern,
+                   rule.previous.formatted_pattern)
+            if tup in self.rules:
+                existing_rule = self.rules[tup]
+                self._say("Ignoring rule {0} because its patterns are "
+                          "duplicates of the patterns of the rule "
+                          "{1} ".format(rule.rulename, existing_rule.rulename),
+                          warning = "Warning")
+            else:
+                self.rules[tup] = rule
+                self._say('Loaded pattern "{0[0]}", previous="{0[1]}", ' 
+                          'weight={1}, method={2}'.format(tup, rule.weight,
+                                                           rule.rulename))
+    def add_substitutions(self, substitutions):
+        """ Add substitution methods to the substitutions list """
+        self.substitutions.extend(substitutions)
+
+    def sort_rules(self):
+        """ If sorted_rules is out of date, update it. """
+        if self.rules_are_sorted:
+            return
+        self.sortedrules = sorted(self.rules.values(), reverse=True)
+        self.rules_sorted = True
+
+    def say_sorted_rules(self):
+        """ Print sorted rules to debug output """
+        for r in self.sortedrules:
+            self._say('({2}) "{0}"/"{1}"'.format(
+                r.pattern.formatted_pattern,
+                r.previous.formatted_pattern, r.weight))
+        
+        
 class Rule(object):
     """ Pattern matching and response rule.
 
@@ -47,7 +329,7 @@ class Rule(object):
             score of the two patterns
     """
     def __init__(self, raw_pattern, raw_previous, weight, alternates,
-                 method, rulename, say=print):
+                 method, rulename, say=None):
         """ Create a new Rule object based on information supplied to the
         @rule decorator. Arguments:
         raw_pattern - simplified regular expression string supplied to @rule
@@ -58,7 +340,9 @@ class Rule(object):
         method - reference to method decorated by @rule
         rulename - modulename.classname.methodname, used to make better
                  error messages
-        say - a function that takes a string, for debug output. Or None.
+        say - a function that takes a string, for debug output, and a warning
+              keyword parameter, which is used if duplicate rules are found.
+              Defaults to None.
 
         Raises PatternError, PatternVariableNotFoundError, 
                PatternVariableValueError
@@ -70,7 +354,7 @@ class Rule(object):
             self.pattern = Pattern(raw_pattern, alternates, say=say)
             previous = "previous "
             self.previous = Pattern(raw_previous, alternates, say=say)
-        except (PatternError, PatternVariableValueError,\
+        except (TypeError, PatternError, PatternVariableValueError,\
                PatternVariableNotFoundError) as e: 
             msg = " in {0}pattern of {1}".format(previous, rulename)
             e.args = (e.args[0] + msg,) + e.args[1:]
@@ -79,9 +363,7 @@ class Rule(object):
         self.weight = weight
         self.method = method
         self.rulename = rulename
-        if say is None:
-            say = lambda s:s
-        self._say = say
+        self._say = say if say is not None else lambda *args, **kwargs:args
 
     def match(self, target, history, variables):
         """ Return a Match object if the targets match the patterns
@@ -109,6 +391,10 @@ class Rule(object):
         return Match(m, mp, target, reply_target)
 
     def __lt__(self, other):
+        """ Full set of comparison operators. The weight passed to @rule
+        is the most significant, followed by the complexity of the pattern
+        and the complexity of the previous pattern.
+        """
         return (self.weight < other.weight
                 or
                 (self.weight == other.weight
@@ -134,19 +420,46 @@ class Rule(object):
 
 
 class Match(object):
-    """ dictionary
-    match0..matchn - memorized matches
-    botmatch0...botmatchn -- matches in the previous reply
-    raw_match0..rawn -- untokenized text
-    bot_orig0 --
+    """ For a match between the two patterns of a @rule and a user message
+    and previous reply, construct a dictionary of values for the parts of the
+    match the @rule wanted to use.
+
+    Public instance variable:
+        dict -- dictionary of matched text
+
+    The dictionary keys will be:
+    match0..matchN         -- memorized matches in the tokenized text of 
+                              the message
+    botmatch0...botmatchN  -- matches in the previous reply's tokenized text
+    raw_match0..rawN       -- memorized matches of the untokenized text of the
+                              message, all capitals and punctuation included, 
+                              but whitespace normalized.
+    bot_rawmatch0 -- bot_rawmatchN -- memorized matches of the untokenized 
+                              text of the previous reply
     """
-    def __init__(self, m_pattern, m_previous, target, previous_target, say=None):
+    def __init__(self, m_pattern, m_previous, target, previous_target):
+        """ Construct a Match object given two regular expression match objects,
+        which if constructed by ParsedPattern will have populated the groupdict
+        with keys match0, match1, ... matchN, as well as the Target objects 
+        they were matched to. 
+        """
         self.dict = {}
         self._add_matches(m_pattern, target, "")
         if m_previous is not None:
             self._add_matches(m_previous, previous_target, "bot")
 
     def _add_matches(self, m, target, prefix):
+        """ Prefix all keys from m.groupdict() with the prefix argument, and 
+        add them to self.dict. Then use the fact that the tokenized_words and
+        raw_words lists in target are the same length to find the chunk of raw
+        text that each match corresponds to, and add those to the dictionary
+        with "raw_" prefixed to their keys.
+        Arguments:
+            m - a match object from a re function
+            target - a Target object
+            prefix - a prefix string to add to key names
+
+        """
         offsets = []
         offset = 0
         for wl in target.tokenized_words:
@@ -160,205 +473,3 @@ class Match(object):
             i_end = bisect.bisect(offsets, end)
             self.dict["raw_" + prefix + k] = " ".join(target.raw_words[i_start:
                                                                        i_end])
-
-class RulesDB(object):
-    def __init__(self, say=print):
-        self.clear_rules()
-        if say is None:
-            say = lambda s:s
-        self._say = say
-
-    def clear_rules(self):
-        """ Make a fresh new empty rules database. """
-        self.topics = {}
-        self.script_instances = []
-        self._new_topic("all")
-
-    def _new_topic(self, topic):
-        """ Add a new topic to the rules database. """
-        self.topics[topic] = Topic()
- 
-    def load_script_directory(self, directory, botvars):
-        """Iterate through the .py files in a directory, and import all of
-        them. Then look for subclasses of Script and search them for
-        rules, and load those into self.topics.
-        botvars is a dictionary that loaded scripts can use to initialize
-        chatobt state
-
-        """
-        self.rules_sorted = False
-        ScriptRegistrar.clear()
-        Script.botvars = botvars
-        
-        for item in os.listdir(directory):
-            if item.lower().endswith(".py"):
-                self._say("Importing " + item)
-                filename = os.path.join(directory, item)
-                self._import(filename)
-
-        for cls in ScriptRegistrar.registry:
-            self._say("Loading scripts from" + cls.__name__)
-            self._load_script(cls)
-
-        if sum([len(t.rules) for k, t in self.topics.items()]) == 0:
-            raise NoRulesFoundError(
-                "No rules were found in {0}/*.py".format(directory))
-                
-    def _import(self, filename):
-        """Import a python module, given the filename, but to avoid creating
-        namespace conflicts give the module a name consisting of
-        _PREFIX + filename (minus any extension). 
-        """
-        global _PREFIX
-        path, name = os.path.split(filename)
-        name, ext = os.path.splitext(name)
-
-        self._say("Reading " + filename)
-        modname = _PREFIX + name
-        file, filename, data = imp.find_module(name, [path])
-        mod = imp.load_module(modname, file, filename, data)
-        return mod
-
-
-    def _load_script(self, script_class):
-        topic, rules = self._load_script_class(script_class)
-        if topic == None:
-            return
-        if topic not in self.topics:
-            self._new_topic(topic)
-
-        for rule in rules:
-            tup = (rule.pattern.formatted_pattern,
-                   rule.previous.formatted_pattern)
-            if tup in self.topics[topic].rules:
-                existing_rule = self.topics[topic].rules[tup]
-                if rule.method != existing_rule.method:
-                    self._say('Ignoring rule "{0[0]}","{0[1]}" at {1} '
-                              'because it is a duplicate of the rule {2} '
-                              'for the topic "{3}".'.format(tup,
-                              rule.rulename, existing_rule.rulename, topic),
-                          warning = "Warning")
-            else:
-                self.topics[topic].rules[tup] = rule
-                self._say('Loaded pattern "{0[0]}", previous="{0[1]}", ' 
-                          'weight={1}, method={2}'.format(tup, rule.weight,
-                                                           rule.rulename))
-           
-
-    def _load_script_class(self, script_class):
-        """Given a subclass of Script, create an instance of it,
-        find all of its methods which begin with one of our keywords
-        and add them to the rules database for the topic of the 
-        script instance.
-
-        If the instance defines an alternates dictionary, substitute
-        those into the patterns of the rules.
-
-        """
-        global _PREFIX
-        instance = script_class()
-        instance.setup()
-        self.script_instances.append(instance)
-        script_class_name = (instance.__module__[len(_PREFIX):] + "." +
-                             instance.__class__.__name__)
-        
-        topic = instance.topic
-        if topic == None: #this is the way to define a script superclass
-            return None, []
-        if topic not in self.topics:
-            self._new_topic(topic)
-
-        alternates = {}
-        if hasattr(instance, "alternates"):
-            alternates = self._validate_alternates(instance.alternates,
-                                                   script_class_name)
-        rules = []
-        for attribute in dir(instance):
-            if attribute.startswith('rule'):
-                rule = self._load_rule(topic, script_class_name, instance,
-                                       attribute, alternates)
-                rules.append(rule)
-        return topic, rules
-
-   
-    def _validate_alternates(self, alternates, script_class_name):
-        if not isinstance(alternates, dict):
-            raise InvalidAlternatesError(
-                "self.alternates is not a dictionary in {0}.".format(
-                    script_class_name))
-        valid = {}
-        for k, v in alternates.items():
-            if not (isinstance(k, str) and isinstance(v, str)):
-                raise TypeError("self.alternates contains non-unicode strings "
-                                "in {0}".format(script_class_name))
-            try:
-                valid[k] = Pattern(v, simple=True,
-                                   say=self._say).formatted_pattern
-            except PatternError as e: 
-                msg = ' in alternates["{0}"] of {1}'.format(k,
-                                                             script_class_name)
-                e.args = (e.args[0] + msg,) + e.args[1:]
-                raise
-        return {"a":valid}
-
-    def _load_rule(self, topic, script_class_name, instance, attribute,
-                      alternates):
-        """ Given an instance of a class derived from Script and
-        a callable attribute, check that it is declared correctly, 
-        and then add it to the rules database for the given topic.
-        """
-        method = getattr(instance, attribute)
-        rulename = script_class_name + "." + attribute
-
-        argspec = get_rule_method_spec(rulename, method)
-
-        raw_pattern, raw_previous, weight = argspec.defaults
-        if not (isinstance(raw_pattern, str) and
-                isinstance(raw_previous, str)):
-            raise TypeError("@rule given non-unicode string in {0}".format(
-                rulename))
-        return Rule(raw_pattern, raw_previous, weight, alternates,
-                    method, rulename, say=self._say)
-
-    def _load_substitute(self, topic, script_class, attribute):
-        pass
-
-    def sort_rules(self):
-        """ Sort the rules for each topic """
-        if self.rules_sorted:
-            return
-        for n, t in self.topics.items():
-            t.sortedrules = sorted([rule for key, rule in t.rules.items()],
-                                   reverse=True)
-        self.rules_sorted = True
-        self._say("-"*20 + "Sorted rules" + "-"*20)
-        for n, t in self.topics.items():
-            self._say("Topic: {0}".format(n))
-            for r in t.sortedrules:
-                self._say('"{0}"/"{1}"'.format(r.pattern.formatted_pattern,
-                                               r.previous.formatted_pattern))
-        self._say("-"*52)
-
-    
-
-        
-def get_rule_method_spec(name, method):
-    """ Check that the passed argument spec matches what we expect the
-    @rule decorator in scripts.py to do. Raises RuleMethodSpecError
-    if a problem is found. If all is good, return the argspec
-    (see inspect.getargspec)
-    """
-    if not hasattr(method, '__call__'):
-        raise RuleMethodSpecError(
-            "{0} begins with 'rule' but is not callable.".format(
-                name))
-    argspec = inspect.getargspec(method)
-    if (len(argspec.args) != 4 or
-        " ".join(argspec.args) != "self pattern previous weight" or
-        argspec.varargs is not None or
-        argspec.keywords is not None or
-        len(argspec.defaults) != 3):
-        raise RuleMethodSpecError("{0} was not decorated by @rule "
-                 "or it has the wrong number of arguments.".format(name))
-    return argspec
-

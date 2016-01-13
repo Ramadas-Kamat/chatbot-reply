@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 # Copyright (c) 2016 Gemini Lasswell
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -9,19 +8,21 @@
 """
 from __future__ import print_function
 from __future__ import unicode_literals
+
 import collections
 import re
 
 from builtins import object, str, zip
 
-from .constants import _HISTORY
-from .patterns import Pattern
-from .rules import Rule, RulesDB
-from .script import Script
-from .exceptions import *
+from chatbot_reply.constants import _HISTORY
+from chatbot_reply.patterns import Pattern
+from chatbot_reply.rules import Rule, RulesDB
+from chatbot_reply.script import Script
+from chatbot_reply.script import kill_non_alphanumerics, split_on_whitespace
+from chatbot_reply.exceptions import *
 
 #todo use imp thread locking, though this thing is totally not thread-safe
-#should force lowercase be an option?
+#should case sensitivity be an option?
 
 class ChatbotEngine(object):
     """ Python Chatbot Reply Generator
@@ -33,25 +34,11 @@ class ChatbotEngine(object):
     database of patterns to select a reply rule, which may recursively reference
     other reply patterns and rules.
 
-    Public class methods:
-    load_scripts
-    reset variables - maybe this should be a flag to load_scripts
-
     Public instance methods:
-    reply
-    build_cache -- might be slow, so if you'd prefer to call it during intialization
-                  rather than delaying response to first message
-
-    Public instance variables:
-        uservars: A dictionary of dictionaries. The outer dictionary is keyed
-                  by user_id, which is whatever hashable value you chose to pass 
-                  to reply(). Each inner dictionary is simply 
-                  variable name:value. Both values are arbitrary, but if you
-                  want to be able to reference a variable name in a script
-                  pattern, it should begin with a letter, contain only letters,
-                  numbers and underscores, and be entirely lower case.
-        botvars:  A dictionary of variables similar to the uservars dictionary,
-                  but available to scripts interacting with all users of the bot
+      load_script_directory: loads rules from a directory of python files
+      clear_rules: empties the rule database
+      reply: given a message, find the best matching rule, run it, and return
+              the reply
     """
 
     def __init__(self, debug=False, depth=50, debuglogger=print,
@@ -59,7 +46,7 @@ class ChatbotEngine(object):
         """Initialize a new ChatbotEngine.
 
         Keyword arguments: 
-        debug -- True or False depending on how much logging you want to see.  
+        debug -- True or False depending on whether you want to see logging.  
         depth -- Recursion depth limit for replies that reference other replies 
         debuglogger and errorlogger -- functions which will be passed a single 
                   string with debugging or warning message output respectively. 
@@ -71,22 +58,16 @@ class ChatbotEngine(object):
         self._errorlogger = errorlogger
         self._depth_limit = depth
 
-        self.botvars = {}
-        self.botvars["debug"] = str(debug)
+        self._botvars = {}
+        self._botvars["debug"] = str(debug)
         
-        self._variables = {"b" : self.botvars,
+        self._variables = {"b" : self._botvars,
                            "u" : None}
         
-        self.users = {}
+        self._users = {} # will contain UserInfo objects
         self.clear_rules()
         
         self._say("Chatbot instance created.")
-
-    def clear_rules(self):
-        self.rules_db = RulesDB(self._say)
-
-    def load_script_directory(self, directory):
-        self.rules_db.load_script_directory(directory, self.botvars)
 
     def _say(self, message, warning=""):
         """Print all warnings to the error log, and debug messages to the
@@ -101,195 +82,261 @@ class ChatbotEngine(object):
               and self._debuglogger):
             self._debuglogger("[Chatbot] {0}".format(message))
 
+    def clear_rules(self):
+        """ Empty the rules database """
+        self.rules_db = RulesDB(self._say)
+
+    def load_script_directory(self, directory):
+        """ Load rules from *.py in a directory """
+        self.rules_db.load_script_directory(directory, self._botvars)
+
     ##### Reading scripts and building the database of rules #####
 
     
     def reply(self, user, message):
         """ For the current topic, find the best matching rule for the message.
         Recurse as necessary if the first rule returns references to other 
-        rules. 
+        rules. This method does setup and cleanup and passes the actual work
+        to self._reply()
+
+        Arguments:
+        user -- any hashable value, used to identify to whom we are speaking
+        message -- string (not bytestring!) to reply to
+
+        Return value: string returned by rule(s)
 
         Exceptions:
         RecursionTooDeepError -- if recursion goes over depth limit passed
             to __init__
         """
+        if not isinstance(message, str):
+            raise TypeError("message argument must be string, not bytestring")
+
         self.rules_db.sort_rules()
+        
         self._say('Asked to reply to: "{0}" from {1}'.format(message, user))
         self._set_user(user)
-        Script.botvars = self.botvars
-        if not isinstance(message, str):
-            print(str(type(message)))
-            raise TypeError("message argument must be unicode, not str")
+        Script.botvars = self._botvars
 
-        reply = self._reply(user, message, 0)
-        self.users[user].msg_history.appendleft(message)
-        self.users[user].repl_history.appendleft(Target(reply, say=self._say))
+        try:
+            reply = self._reply(user, message, 0)
+        except RecursionTooDeepError as e:
+            e.args = ('Could not find reply to "{0}", due to rules '
+                      "referencing other rules too many "
+                      "times".format(message),)
+            raise
+        self._remember(user, message, reply)
         return reply
 
     def _reply(self, user, message, depth):
+        """ Recursively construct replies """
         if depth > self._depth_limit:
             raise RecursionTooDeepError
+        
         self._say('Searching for rule matching "{0}", depth == {1}'.format(
             message, depth))
-        
-        target = Target(message, say=self._say)
+        topic = self._users[user].topic_name
+        target = Target(message, self.rules_db.topics[topic].substitutions,
+                        say=self._say)
         reply = ""
-        topic = self.users[user].vars["__topic__"]
+        
         for rule in self.rules_db.topics[topic].sortedrules:
-            m = rule.match(target, self.users[user].repl_history,
+            m = rule.match(target, self._users[user].repl_history,
                            self._variables)
             if m is not None:
-                self._say("Found match, rule {0}".format(
-                    rule.rulename))
-                Script.match = m.dict
-                reply = rule.method()
-                if not isinstance(reply, str):
-                    raise TypeError("Rule {0} returned something other than a "
-                                    "unicode string.".format(rule.rulename))
-                self._say('Rule {0} returned "{1}"'.format(
-                    rule.rulename, reply))
-                if Script.current_topic != topic:
-                    if Script.current_topic not in self.rules_db.topics:
-                        self._say("Rule {0} changed to empty topic {1}, "
-                                  "returning to 'all'".format(rule.rulename,
-                                                              topic),
-                                  warning="Warning")
-                    else:
-                        topic = Script.current_topic
-                        self.users[user].vars["__topic__"] = topic
-                        self._say("User {0} now in topic {1}".format(user,
-                                                                     topic))
-
+                reply = self._reply_from_rule(rule, m)
+                self._check_for_topic_change(user, rule, topic,
+                                             Script.current_topic)
                 break
 
-        reply = self._recursively_expand_reply(user, m, reply, depth)
-
+        reply = self._recursively_expand_reply(user, reply, depth)
         if not reply:
             self._say("Empty reply generated")
         else:
             self._say("Generated reply: " + reply)
         return reply
 
-    def _recursively_expand_reply(self, user, m, reply, depth):
-        matches = [m for m in re.finditer("<.*?>", reply, flags=re.UNICODE)]
+    def _reply_from_rule(self, rule, rule_match):
+        """ Given a rule and the results from a successful match of the rule's
+        pattern, call the rule method and return the results. 
+        """
+        self._say("Found match, rule {0}".format(rule.rulename))
+        Script.match = rule_match.dict
+        reply = rule.method()
+        if not isinstance(reply, str):
+            raise TypeError("Rule {0} returned something other than a "
+                            "string.".format(rule.rulename))
+        self._say('Rule {0} returned "{1}"'.format(rule.rulename, reply))
+        return reply
+
+
+    def _recursively_expand_reply(self, user, reply, depth):
+        """ Given a reply string from a rule, look for references to other
+        rules enclosed within < > and recursively call _reply to get responses,
+        and substitute those into the original string. Evaluates from left
+        to right. Doesn't care if you match the <>'s or not.
+        """
+        matches = [m for m in re.finditer("<(.*?)>", reply, flags=re.UNICODE)]
         if matches:
             self._say("Rule returned: " + reply)
-        sub_replies = []
-        for match in matches:
-            begin, end = match.span()
-            rep = self._reply(user, reply[begin + 1:end - 1], depth + 1)
-            sub_replies.append(rep)
+        sub_replies = [self._reply(user, m.groups()[0], depth + 1)
+                       for m in matches]
         zipper = list(zip(matches, sub_replies))
         zipper.reverse()
-        for match, rep in zipper:
-            begin, end = match.span()
-            reply = reply[:begin] + rep + reply[end:]
+        for m, sub_reply in zipper:
+            reply = reply[:m.start()] + sub_reply + reply[m.end():]
         return reply    
-        
+
+    def _check_for_topic_change(self, user, rule, old_topic, new_topic):
+        """ Given a rule, and the topic set before and after its execution,
+        make sure the change is legit and do appropriate debug logging. 
+        """
+        if old_topic != new_topic:
+            if new_topic not in self.rules_db.topics:
+                self._say("Rule {0} changed to empty topic {1}, "
+                          "returning to 'all'".format(rule.rulename, new_topic),
+                          warning="Warning")
+                new_topic = "all"
+            self._say("User {0} now in topic {1}".format(user, new_topic))
+
+        self._users[user].topic_name = new_topic
+        Script.set_topic(new_topic)
 
     def _set_user(self, user):
-        new = False
-        if user not in self.users:
-            self.users[user] = UserInfo()
-            new = True
-        uservars = self.users[user].vars
-        
-        topic = uservars["__topic__"]
+        """ Set up the Script class to process a message from a user. If the
+        user is new to us, create the UserInfo object for them, and call
+        the setup_user method of all the script instances so they can
+        initialize user variables.
+        """
+        new = (user not in self._users)
+        if new:
+            self._users[user] = UserInfo()
+
+        self._variables["u"] = self._users[user].vars
+        topic = self._users[user].topic_name
         if topic not in self.rules_db.topics:
             self._say("User {0} is in empty topic {1}, "
-                      "returning to 'all'".format(user, topic))
-            topic = uservars["__topic__"] = "all"
+                      "returning to 'all'".format(user, topic),
+                      warning="Warning")
+            topic = self._users[user].topic_name = "all"
 
-        Script.set_user(user, uservars)
-        self._variables["u"] = uservars
-
+        Script.set_user(user, self._users[user].vars)
+        Script.set_topic(topic)
+        
         if new:
             for inst in self.rules_db.script_instances:
                 inst.setup_user(user)
             
+    def _remember(self, user, message, reply):
+        """ Save recent messages and replies, per user """
+        user_info = self._users[user]
+        topic_name = user_info.topic_name
+        user_info.msg_history.appendleft(message)
+        user_info.repl_history.appendleft(
+            Target(reply, self.rules_db.topics[topic_name].substitutions))
+        
 class UserInfo(object):
+    """ A class for stashing per-user information. Public instance variables:
+    vars: a dictionary of variable names and values
+    topic_name: the name of the topic the user is currently in
+    msg_history: a deque containing Targets for a few recent messages
+    repl_history: a deque containing Targets for a few recent replies
+    """
     def __init__(self):
         self.vars = {}
-        self.vars["__topic__"] = "all"
+        self.topic_name = "all"
         self.msg_history = collections.deque(maxlen=_HISTORY)
         self.repl_history = collections.deque(maxlen=_HISTORY)
 
     
 class Target(object):
-    """ Prepare a message to be a match target.
-    - Break it into a list of words on whitespace and save the originals
-    - lowercase everything
-    - Run substitutions
-    - Kill remaining non-alphanumeric characters
+    """ A message prepared to be a match target.
 
     Public instance variables:
     raw_text: the string passed to the constructor
     raw_words: a list of words of the same string, split on whitespace
     tokenized_words: a list of lists, one for each word in orig_words
-        after making them lower case, doing substitutions (see below),
+        after doing substitutions (see below), making them lower case, 
         and removing all remaining non-alphanumeric characters.
-        
     normalized: tokenized_words, joined back together by single spaces
 
-    For example, given that "i'm" => "i am" and "," => "comma" are in the 
-    substitutions list, here are the resulting values of raw_words,
-    tokenized_words, and normalized:
-
-    I'm tired today! ==>  ["I'm", "tired", "today!"],
-                          [["i", "am"], ["tired"], ["today"]]
-                          "i am tired today"
-    Bob's cat is missing. ==> ["Bob's", "cat", "is", "missing."]
-                              [["bob", "s"], ["cat"], ["is"], ["missing"]]
-                              "bob s cat is missing"
-    Wazzup! :) ==> ["Wazzup!", ":)"]
-                   [["wazzup"], [""]])
-                   "wazzup"
-    I need bacon, eggs and milk. ==> ["I", "need", "bacon,", "eggs", 
-                                      "and", "milk."]
-                                     [["i"], ["need"], ["bacon", "comma"],
-                                      ["eggs"], ["and"], ["milk"]]
-                                     "i need bacon comma eggs and milk"
     """
-    def __init__(self, text, substitutions=None, say=print):
-        self.raw_text = text
-        self.raw_words = self.split_on_spaces(text)
-        self.lc_words = [word.lower() for word in self.raw_words]
-        self.sub_words = [self._do_substitutions(word, substitutions)
-                          for word in self.lc_words]
-        self.tokenized_words = [[self._kill_non_alphanumerics(word)
-                        for word in wl] for wl in self.sub_words]
-        self.normalized = " ".join(
-                                [" ".join(wl) for wl in self.tokenized_words])
+    def __init__(self, text, substitutions=[], say=None):
+        """ Create a match target from a string.
+            - Break it into a list of words on whitespace and save the originals
+            - Run substitutions
+            - lowercase everything
+            - Kill remaining non-alphanumeric characters
+
+        Parameters:
+            text - the string to process
+            substitutions - a list of (name, func) tuples. Each function will
+                be passed the original input string and a list containing lists
+                of words derived from the original input string. Each function
+                must return a list of lists of words and the outer list must be
+                the same length as the input. The functions in the substitutions
+                list will all be called, using the output of one as the input of
+                the next.
+
+        Examples, showing text and the results placed in raw_words,
+        tokenized_words and normalized.
+
+        I'm tired today! ==>  ["I'm", "tired", "today!"],
+                              [["im"], ["tired"], ["today"]]
+                              "im tired today"
+        Wazzup! :) ==> ["Wazzup!", ":)"]
+                       [["wazzup"], [[""]])
+                       "wazzup"
+
+        Substitutor methods may change the number of words in the sublists of 
+        tokenized_words, but they should not change the number of sublists in
+        tokenized_words, or a TypeError will be raised.
+
+        For example, a substitutor that expands contractions might do this:
+
+        I'm tired today! ==>  ["I'm", "tired", "today!"],
+                              [["i am"], ["tired"], ["today"]]
+                              "i am tired today"
+
+        The reason for the nested lists in tokenized_words is so that the code
+        which generates matches can map text matched  in the normalized 
+        string back to the original string, so for example if you match
+        "I'm tired today!" to the pattern "i am tired _*", the match dict
+        entry for "raw_match0" will contain "today!"
+        """
         if say == None:
             say = lambda s:s
         self._say = say
+
+        self.raw_text = text
+        self.raw_words = split_on_whitespace(text)
+        sub_words = self._do_substitutions(substitutions)
+
+        self.tokenized_words = [[kill_non_alphanumerics(word.lower())
+                        for word in wl] for wl in sub_words]
+        self.normalized = " ".join(
+                                [" ".join(wl) for wl in self.tokenized_words])
         self._say('[Target] Normalized message to "{0}"'.format(self.normalized))
 
-    def split_on_spaces(self, text):
-        """ Because this has to work in Py 2.6, and re.split doesn't do UNICODE
-        in 2.6.  Return text broken into words by whitespace. """
-        matches = [m for m in re.finditer("[\S]+", text, flags=re.UNICODE)]
-        results = [text[m.span()[0]:m.span()[1]] for m in matches]
-        return results
-
-    def _do_substitutions(self, word, substitutions):
+    def _do_substitutions(self, substitutions):
         """Check a word against the substitutions dictionary. If the word is
         not found, return it wrapped in a list. Otherwise return the
         value from the dictionary as a list of words.
         """
-        if substitutions is None:
-            return [word]
-        else:
-            replacement = self._substitutions.get(word, word)
-            return re.split('\s+', replacement, flags=re.UNICODE)
-
-    def _kill_non_alphanumerics(self, text):
-        """remove any non-alphanumeric characters from a string and return the
-        result. re.sub doesn't do UNICODE in python 2.6.
-
-        """
-        matches = [m for m in re.finditer("[\w]+", text, flags=re.UNICODE)]
-        result = "".join([text[m.span()[0]:m.span()[1]] for m in matches])
-        return result        
-            
-
+        results = [[word] for word in self.raw_words]
+        length = len(results)
+        for name, func in substitutions:
+            try:
+                clearer_error_message = ""
+                results = func(self.raw_text, results)
+                clearer_error_message = " return value of"
+                self._say("[Target] {0} returned {1}".format(name, results))
+                if len(results) != length:
+                    raise TypeError("Returned list must be same length as "
+                                    "passed list")
+            except Exception as e:
+                msg = (" in{0} {1}".format(clearer_error_message, name))
+                e.args = (e.args[0] + msg,) + e.args[1:]
+                raise
+                
+        return results

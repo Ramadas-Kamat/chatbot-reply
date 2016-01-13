@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 # Copyright (c) 2016 Gemini Lasswell
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -21,19 +20,19 @@ if __name__ == "__main__":
         if msg == "/quit":
             break
         elif msg == "/botvars":
-            print(str(ch.botvars))
+            print(str(ch._botvars))
         elif msg == "/uservars":
-            if "local" in ch.users:
-                print(str(ch.users["local"].vars))
+            if "local" in ch._users:
+                print(str(ch._users["local"].vars))
             else:
                 print("No user variables have been defined.")
         elif msg == "/reload":
             ch.clear_rules()
             ch.load_script_directory("scripts")
         elif msg == "/debug":
-            if ch.botvars["debug"] == "True":
-                ch.botvars["debug"] = "False"
+            if ch._botvars["debug"] == "True":
+                ch._botvars["debug"] = "False"
             else:
-                ch.botvars["debug"] = "True"
+                ch._botvars["debug"] = "True"
         else:
             print("Bot> " + ch.reply("local", msg))
