@@ -12,7 +12,7 @@ from __future__ import unicode_literals
 import collections
 import re
 
-from builtins import object, str, zip
+from chatbot_reply.six import text_type
 
 from chatbot_reply.constants import _HISTORY
 from chatbot_reply.patterns import Pattern
@@ -59,7 +59,7 @@ class ChatbotEngine(object):
         self._depth_limit = depth
 
         self._botvars = {}
-        self._botvars["debug"] = str(debug)
+        self._botvars["debug"] = text_type(debug)
         
         self._variables = {"b" : self._botvars,
                            "u" : None}
@@ -109,7 +109,7 @@ class ChatbotEngine(object):
         RecursionTooDeepError -- if recursion goes over depth limit passed
             to __init__
         """
-        if not isinstance(message, str):
+        if not isinstance(message, text_type):
             raise TypeError("message argument must be string, not bytestring")
 
         self.rules_db.sort_rules()
@@ -163,7 +163,7 @@ class ChatbotEngine(object):
         self._say("Found match, rule {0}".format(rule.rulename))
         Script.match = rule_match.dict
         reply = rule.method()
-        if not isinstance(reply, str):
+        if not isinstance(reply, text_type):
             raise TypeError("Rule {0} returned something other than a "
                             "string.".format(rule.rulename))
         self._say('Rule {0} returned "{1}"'.format(rule.rulename, reply))
@@ -304,9 +304,7 @@ class Target(object):
         "I'm tired today!" to the pattern "i am tired _*", the match dict
         entry for "raw_match0" will contain "today!"
         """
-        if say == None:
-            say = lambda s:s
-        self._say = say
+        self._say = say if say is not None else lambda s:s
 
         self.raw_text = text
         self.raw_words = split_on_whitespace(text)

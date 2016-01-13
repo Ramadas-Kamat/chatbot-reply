@@ -78,13 +78,12 @@
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from builtins import next, object, str
-
 import inspect
 import itertools
 import re
 
-from .exceptions import *
+from chatbot_reply.six import text_type, next
+from chatbot_reply.exceptions import *
 
 # TODO - could pass in a string such as "uba" with variable classes to create
 # TODO - make a parsetree class, use that instead of a list and put Token's two
@@ -131,9 +130,9 @@ class Wild(Token):
             self.minimum = self.maximum = groups[0]
         if groups[1]: #they gave us a ~
             self.maximum = groups[2]
-        self.minimum = str(max(int(self.minimum), 1))
+        self.minimum = text_type(max(int(self.minimum), 1))
         if self.maximum:
-            self.maximum = str(max(int(self.maximum), int(self.minimum)))
+            self.maximum = text_type(max(int(self.maximum), int(self.minimum)))
 
     def add_to_parsetree(self, parsetree):
         parsetree.contents.append(self)
@@ -163,10 +162,10 @@ class Wild(Token):
             # we are going to try to match n-1 repetitions of the pattern
             # followed by a space plus 1 rep of the pattern followed by a
             # \b
-            min_str = str(int(self.minimum) - 1)
+            min_str = text_type(int(self.minimum) - 1)
             max_str = self.maximum
             if max_str != "":
-                max_str = str(int(self.maximum) - 1)
+                max_str = text_type(int(self.maximum) - 1)
             return (r"(" + wildcard + r"\s)" +
                     r"{" + min_str + r"," + max_str + r"}?"
                     + wildcard + r"\b")
@@ -268,7 +267,7 @@ class Variable(Token):
                 "Chatbot variable %{0}:{1} is undefined".format(self.var_id,
                                                              self.var_name))
         value = variables[self.var_id][self.var_name]
-        if not isinstance(value, str):
+        if not isinstance(value, text_type):
             raise PatternVariableValueError(
                 "Value in pattern variable %{0}:{1} could not be used "
                 "because it is not a unicode string.".format(
@@ -423,7 +422,7 @@ class PatternTokenizer(object):
         for each matching regular expression that it finds in the string.
         Raises TypeError if not given a unicode argument.
         """
-        if not isinstance(string, str):
+        if not isinstance(string, text_type):
             raise TypeError("Argument must be unicode string")
         while True:
             m = self._regexc.match(string)
@@ -478,7 +477,7 @@ class ParsedPattern(object):
         elif isinstance(args[0], list):
             self.contents.extend(args[0])
         else:
-            if isinstance(args[0], str): 
+            if isinstance(args[0], text_type): 
                 simple = kwargs.pop("simple", False)
                 pattern = args[0]
                 pattern = pattern.lower()

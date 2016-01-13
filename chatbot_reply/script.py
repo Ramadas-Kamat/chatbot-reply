@@ -11,8 +11,7 @@ import inspect
 import random
 import re
 
-from future.utils import with_metaclass
-from builtins import object
+from chatbot_reply.six import with_metaclass
 
 from chatbot_reply.exceptions import *
 from chatbot_reply.constants import _PREFIX

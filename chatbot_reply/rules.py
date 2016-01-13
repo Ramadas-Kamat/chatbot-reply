@@ -12,8 +12,6 @@ import imp
 import inspect
 import os
 
-from builtins import object, str
-
 from chatbot_reply.constants import _PREFIX
 from chatbot_reply.exceptions import *
 from chatbot_reply.patterns import Pattern
