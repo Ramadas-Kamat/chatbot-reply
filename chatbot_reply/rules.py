@@ -70,7 +70,7 @@ class RulesDB(object):
                 self._import(filename)
 
         for cls in ScriptRegistrar.registry:
-            self._say("Loading scripts from" + cls.__name__)
+            self._say("Loading scripts from " + cls.__name__)
             self._add_to_rulesdb(cls)
 
         if sum([len(t.rules) for k, t in self.topics.items()]) == 0:
