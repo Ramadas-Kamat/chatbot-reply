@@ -192,9 +192,13 @@ class RulesDB(object):
 
     def sort_rules(self):
         """ Sort the rules for each topic """
+        updated = False
         for topic in self.topics.values():
+            if not topic.rules_are_sorted:
+                updated = True
             topic.sort_rules()
-        self._say_all_rules()
+        if updated:
+            self._say_all_rules()
 
     def _say_all_rules(self):
         """ Print the rules lists to debug ouput """
@@ -295,7 +299,7 @@ class Topic(object):
         if self.rules_are_sorted:
             return
         self.sortedrules = sorted(self.rules.values(), reverse=True)
-        self.rules_sorted = True
+        self.rules_are_sorted = True
 
     def say_sorted_rules(self):
         """ Print sorted rules to debug output """
