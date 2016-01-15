@@ -81,21 +81,21 @@ class ValveScript(Script):
                             " and get back to you in a moment.",
                             " and get back to you in just a moment."])
 
-    @rule("_(open|close) it", previous="* shutoff valve * drain valve *")
+    @rule("_(open|close) it", previous_reply="* shutoff valve * drain valve *")
     def rule_open_close_it_previous_both_valves(self):
         return "What do you want me to {match0}?"
 
-    @rule("_(open|close) it", previous="* _%a:anyvalve [*]")
+    @rule("_(open|close) it", previous_reply="* _%a:anyvalve [*]")
     def rule_open_close_it_previous_any_valve(self):
-        return "<{match0} the {botmatch0}>"
+        return "<{match0} the {reply_match0}>"
 
     @rule("_(open|close) [it]")
     def rule_open_close_it(self):
         return "What do you want me to {match0}?"
 
-    @rule("[the] _%a:anyvalve", previous="what do you want me to (open|close)")
+    @rule("[the] _%a:anyvalve", previous_reply="what do you want me to (open|close)")
     def rule_the_anyvalve_with_previous_whaddayawant(self):
-        return "OK, <{botmatch0} the {match0}>"
+        return "OK, <{reply_match0} the {match0}>"
 
     @rule("[turn [the]] water on")
     def rule_turn_the_water_on(self):

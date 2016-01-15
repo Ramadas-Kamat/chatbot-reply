@@ -192,16 +192,16 @@ class TestScript(Script):
     @rule("the number is _# and the word is _@")
     def rule_and_word(self):
         return "results: {match0} {match1}"
-    @rule("*", previous="results _*1 _*1")
+    @rule("*", previous_reply="results _*1 _*1")
     def rule_after_results(self):
-        return "again: {botmatch0} {botmatch1}"
+        return "again: {reply_match0} {reply_match1}"
     @rule("my name is _@1 _@1")
     def rule_my_name_is(self):
         return "I'll put you down as {raw_match1}, {raw_match0}."
-    @rule("play it again sam", previous="_* as _*")
+    @rule("play it again sam", previous_reply="_* as _*")
     def rule_play_it_again(self):
-        return ("The first part was '{raw_botmatch0}' "
-                "and the second part was '{raw_botmatch1}'.")
+        return ("The first part was '{raw_reply_match0}' "
+                "and the second part was '{raw_reply_match1}'.")
 """
         conversation = [("local", u"The number is 5 and the word is spam",
                          u"results: 5 spam"),
@@ -221,7 +221,7 @@ class TestScript(Script):
     @rule("_*")
     def rule_star(self):
         return "echo {match0}"
-    @rule("*", previous="echo [*]")
+    @rule("*", previous_reply="echo [*]")
     def rule_after_results(self):
         return "echo"
 """
@@ -298,7 +298,8 @@ class TestScript(Script):
     @rule("say it")
     def rule_say_it(self):
         return "number 5 color blue letter x"
-    @rule("check it", previous="number %b:numbers color %a:colors letter %u:letters")
+    @rule("check it", 
+          previous_reply="number %b:numbers color %a:colors letter %u:letters")
     def rule_check_it(self):
         return "pass4"
     @rule("*")
@@ -400,9 +401,9 @@ class TestScript(Script):
     def rule_name(self):
         self.uservars["name"] = self.match["raw_match0"]
         return "Nice to meet you!"
-    @rule("what did you just say", previous="_*")
+    @rule("what did you just say", previous_reply="_*")
     def rule_what(self):
-        return 'I just said "{raw_botmatch0}"'
+        return 'I just said "{raw_reply_match0}"'
     @rule("what is my name")
     def rule_what_name(self):
         if "name" in self.uservars:

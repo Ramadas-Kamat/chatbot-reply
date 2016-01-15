@@ -37,11 +37,11 @@ class HokeyPokeyScript(Script):
     def rule_knock_knock(self):
         return "Who's there?"
 
-    @rule("_*", previous="whos there")
+    @rule("_*", previous_reply="whos there")
     def rule_star_prev_who_is_there(self):
         return "{raw_match0} who?"
 
-    @rule("_*", previous="* who")
+    @rule("_*", previous_reply="* who")
     def rule_star_prev_star_who(self):
         return "Lol {raw_match0}! That's a good one!"
 

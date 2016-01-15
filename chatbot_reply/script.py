@@ -16,12 +16,12 @@ from chatbot_reply.six import with_metaclass
 from chatbot_reply.exceptions import *
 from chatbot_reply.constants import _PREFIX
 
-def rule(pattern_text, previous="", weight=1):
+def rule(pattern_text, previous_reply="", weight=1):
     """ decorator for rules in subclasses of Script """
     def rule_decorator(func):
         @wraps(func)
-        def func_wrapper(self, pattern=pattern_text, previous=previous,
-                         weight=weight):
+        def func_wrapper(self, pattern=pattern_text,
+                         previous_reply=previous_reply, weight=weight):
             result = func(self)
             try:
                 return self.process_reply(self.choose(result))
