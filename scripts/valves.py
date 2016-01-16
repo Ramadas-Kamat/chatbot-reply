@@ -93,7 +93,7 @@ class ValveScript(Script):
     def rule_open_close_it(self):
         return "What do you want me to {match0}?"
 
-    @rule("[the] _%a:anyvalve", previous_reply="what do you want me to (open|close)")
+    @rule("[the] _%a:anyvalve", previous_reply="what do you want me to _(open|close)")
     def rule_the_anyvalve_with_previous_whaddayawant(self):
         return "OK, <{reply_match0} the {match0}>"
 
