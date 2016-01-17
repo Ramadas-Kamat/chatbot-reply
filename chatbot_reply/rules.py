@@ -70,7 +70,7 @@ class RulesDB(object):
                 self._import(filename)
 
         for cls in ScriptRegistrar.registry:
-            self._say("Loading scripts from" + cls.__name__)
+            self._say("Loading scripts from " + cls.__name__)
             self._add_to_rulesdb(cls)
 
         if sum([len(t.rules) for k, t in self.topics.items()]) == 0:
@@ -192,9 +192,13 @@ class RulesDB(object):
 
     def sort_rules(self):
         """ Sort the rules for each topic """
+        updated = False
         for topic in self.topics.values():
+            if not topic.rules_are_sorted:
+                updated = True
             topic.sort_rules()
-        self._say_all_rules()
+        if updated:
+            self._say_all_rules()
 
     def _say_all_rules(self):
         """ Print the rules lists to debug ouput """
@@ -217,7 +221,7 @@ def get_rule_method_spec(name, method):
                 name))
     argspec = inspect.getargspec(method)
     if (len(argspec.args) != 4 or
-        " ".join(argspec.args) != "self pattern previous weight" or
+        " ".join(argspec.args) != "self pattern previous_reply weight" or
         argspec.varargs is not None or
         argspec.keywords is not None or
         len(argspec.defaults) != 3):
@@ -295,7 +299,7 @@ class Topic(object):
         if self.rules_are_sorted:
             return
         self.sortedrules = sorted(self.rules.values(), reverse=True)
-        self.rules_sorted = True
+        self.rules_are_sorted = True
 
     def say_sorted_rules(self):
         """ Print sorted rules to debug output """
@@ -428,11 +432,11 @@ class Match(object):
     The dictionary keys will be:
     match0..matchN         -- memorized matches in the tokenized text of 
                               the message
-    botmatch0...botmatchN  -- matches in the previous reply's tokenized text
+    reply_match0...reply_matchN  -- matches in the previous reply's tokenized text
     raw_match0..rawN       -- memorized matches of the untokenized text of the
                               message, all capitals and punctuation included, 
                               but whitespace normalized.
-    bot_rawmatch0 -- bot_rawmatchN -- memorized matches of the untokenized 
+    reply_raw_match0 -- reply_rawmatchN -- memorized matches of the untokenized 
                               text of the previous reply
     """
     def __init__(self, m_pattern, m_previous, target, previous_target):
@@ -444,7 +448,7 @@ class Match(object):
         self.dict = {}
         self._add_matches(m_pattern, target, "")
         if m_previous is not None:
-            self._add_matches(m_previous, previous_target, "bot")
+            self._add_matches(m_previous, previous_target, "reply_")
 
     def _add_matches(self, m, target, prefix):
         """ Prefix all keys from m.groupdict() with the prefix argument, and 

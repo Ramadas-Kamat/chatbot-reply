@@ -16,12 +16,12 @@ from chatbot_reply.six import with_metaclass
 from chatbot_reply.exceptions import *
 from chatbot_reply.constants import _PREFIX
 
-def rule(pattern_text, previous="", weight=1):
+def rule(pattern_text, previous_reply="", weight=1):
     """ decorator for rules in subclasses of Script """
     def rule_decorator(func):
         @wraps(func)
-        def func_wrapper(self, pattern=pattern_text, previous=previous,
-                         weight=weight):
+        def func_wrapper(self, pattern=pattern_text,
+                         previous_reply=previous_reply, weight=weight):
             result = func(self)
             try:
                 return self.process_reply(self.choose(result))
@@ -79,6 +79,15 @@ class Script(with_metaclass(ScriptRegistrar, object)):
     setup_user(self, user) - a method that is called the first time the engine
         is processing a message from a given user. This is a good place to initialize
         user variables used by a script.
+    alternates - a dictionary of patterns. Key names must be alphanumeric and
+        may not begin with an underscore or number. The patterns must be simple
+        in that they can't contain references to variables or wildcards or
+        the memorization character _. When the patterns for the rules are 
+        imported the alternates will be substituted in at import time, as 
+        opposed to user and bot variables, which are substituted in every time
+        a rule is matched with a new message. If you have 20,000 rules, this
+        might make a performance difference, but if you have 20, it won't. 
+        Changing self.alternates after import will have no effect on pattern matching.
     substitute(self, text, list_of_lists) - Any method name defined by a subclass
         that begins with substitute will be called with the raw text of every
         message (within its topic) and a list of list of words that have been
@@ -86,7 +95,8 @@ class Script(with_metaclass(ScriptRegistrar, object)):
         outer list is the same length. Use this to do things like expand
         contractions, interpret ascii smileys such as >:| and otherwise mess
         with the tokenizations. If there is more than one substitute method 
-        for a topic, they will all be called in an unpredictable order.
+        for a topic, they will all be called in an unpredictable order, each
+        passed the output of the one before.
     @rule(pattern, previous="", weight=1)
     rule(self) - methods decorated by @rule and beginning with "rule" are
         the gears of the script engine. The engine will select one rule method 

@@ -23,6 +23,7 @@ from chatbot_reply.exceptions import *
 
 #todo use imp thread locking, though this thing is totally not thread-safe
 #should case sensitivity be an option?
+#If we decide to rerun setup methods, need to reparse alternates
 
 class ChatbotEngine(object):
     """ Python Chatbot Reply Generator

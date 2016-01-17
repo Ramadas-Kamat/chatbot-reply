@@ -11,3 +11,4 @@ __all__      = ["ChatbotEngine", "Script", "rule",
                 "NoRulesFoundError", "RecursionTooDeepError",
                 "split_on_whitespace", "kill_non_alphanumerics"
                 ]
+__version__ = "0.1.0"
