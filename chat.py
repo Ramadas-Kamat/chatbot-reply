@@ -5,6 +5,7 @@
 """ Example use of chatbot_reply module, simple interactive mode """
 from __future__ import print_function
 from __future__ import unicode_literals
+import logging
 
 from chatbot_reply.six import text_type
 from chatbot_reply.six.moves import input
@@ -12,11 +13,19 @@ from chatbot_reply.six.moves import input
 from chatbot_reply import ChatbotEngine
 
 if __name__ == "__main__":
-    ch = ChatbotEngine(debug=False)
+    log = logging.getLogger()
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("[%(name)s] %(message)s")
+    handler.setFormatter(formatter)
+    log.addHandler(handler)
+    log.setLevel(logging.ERROR)
+    
+    ch = ChatbotEngine()
     ch.load_script_directory("scripts")
-    print ("Type /quit to quit, /debug to toggle debug output, "
+    print ("Type /quit to quit, "
            "/botvars or /uservars to see values of variables, "
-           "/reload to reload the scripts directory.")
+           "/reload to reload the scripts directory,"
+           "/log plus debug, info, warning or error to set logging level.")
     while True:
         msg = text_type(input("You> "))
         if msg == "/quit":
@@ -31,10 +40,13 @@ if __name__ == "__main__":
         elif msg == "/reload":
             ch.clear_rules()
             ch.load_script_directory("scripts")
-        elif msg == "/debug":
-            if ch._botvars["debug"] == "True":
-                ch._botvars["debug"] = "False"
-            else:
-                ch._botvars["debug"] = "True"
+        elif msg == "/log debug":
+            log.setLevel(logging.DEBUG)
+        elif msg == "/log info":
+            log.setLevel(logging.INFO)
+        elif msg == "/log warning":
+            log.setLevel(logging.WARNING)
+        elif msg == "/log error":
+            log.setLevel(logging.ERROR)
         else:
             print("Bot> " + ch.reply("local", msg))

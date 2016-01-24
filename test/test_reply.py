@@ -8,6 +8,7 @@
 
 """
 from __future__ import print_function
+import logging
 import os
 import shutil
 import tempfile
@@ -19,6 +20,13 @@ from chatbot_reply import ChatbotEngine
 from chatbot_reply import PatternError, RecursionTooDeepError, NoRulesFoundError
 from chatbot_reply.reply import Target
 
+class TestHandler(logging.Handler):
+    def emit(self, record):
+        pass
+testhandler = TestHandler()
+testhandler.setLevel(logging.WARNING)
+logging.getLogger().addHandler(testhandler)
+    
 class TargetTestCase(unittest.TestCase):
     def setUp(self):
         pass
@@ -29,7 +37,7 @@ class TargetTestCase(unittest.TestCase):
         problems = [r"ABC_abc 123 !@#$%^&**()-=+|}{[]\~~`';:/.,<>?", "",
                     "Apples, oranges and bananas!", "This one isn't as hard"]
         for p in problems:
-            t = Target(p, [], say=None)
+            t = Target(p, [])
             self.assertEqual(t.raw_text, p)
             self.assertEqual(len(t.raw_words), len(t.tokenized_words))
             for wl in t.tokenized_words:
@@ -38,10 +46,9 @@ class TargetTestCase(unittest.TestCase):
             
 class ChatbotEngineTestCase(unittest.TestCase):
     def setUp(self):
-        self.debuglogger = Mock()
-        self.errorlogger = Mock()
-        self.ch = ChatbotEngine(debug=True, debuglogger=self.debuglogger,
-                                errorlogger=self.errorlogger)
+
+        self.errorlogger = testhandler.emit = Mock()
+        self.ch = ChatbotEngine()
         self.scripts_dir = tempfile.mkdtemp()
 
         self.py_imports = b"""
@@ -87,6 +94,7 @@ class TestScript(Script):
 """
         self.write_py(py, filename="foo.py")
         self.write_py(py, filename="bar.py")
+        testhandler.setLevel(logging.WARNING)
         self.ch.load_script_directory(self.scripts_dir)
         self.assertEqual(self.errorlogger.call_count, 1)
         

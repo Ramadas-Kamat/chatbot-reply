@@ -7,13 +7,10 @@
 """
 from __future__ import unicode_literals
 from functools import wraps
-import inspect
 import random
 import re
 
 from chatbot_reply.six import with_metaclass
-
-from chatbot_reply.exceptions import *
 from chatbot_reply.constants import _PREFIX
 
 def rule(pattern_text, previous_reply="", weight=1):
@@ -106,8 +103,10 @@ class Script(with_metaclass(ScriptRegistrar, object)):
     Child classes may overload self.choose and self.process_reply if they would
     like different behavior.
 
-    Public class attributes that are meant to be used but not modified by
-    child classes:
+    Public class attributes that are meant to be used by child classes,
+    but not modified (with the exception that it's ok to change, add and
+    delete things in the variable dictionaries, just not the dictionary
+    objects themselves):
     botvars - dictionary of variable names and values that are global for
         all users of the chatbot engine
     uservars - dictionary of variable names and values for the current user
