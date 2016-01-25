@@ -9,15 +9,13 @@
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import collections
 import logging
 import re
 
-from chatbot_reply.six import text_type
+from chatbot_reply.six import get_method_self, text_type
 
-from chatbot_reply.constants import _HISTORY
 from chatbot_reply.rules import RulesDB
-from chatbot_reply.script import Script
+from chatbot_reply.script import Script, UserInfo
 from chatbot_reply.script import kill_non_alphanumerics, split_on_whitespace
 from chatbot_reply.exceptions import *
 
@@ -71,7 +69,7 @@ class ChatbotEngine(object):
 
     ##### Reading scripts and building the database of rules #####
     
-    def reply(self, user, message):
+    def reply(self, user, user_dict, message):
         """ For the current topic, find the best matching rule for the message.
         Recurse as necessary if the first rule returns references to other 
         rules. This method does setup and cleanup and passes the actual work
@@ -79,6 +77,8 @@ class ChatbotEngine(object):
 
         Arguments:
         user -- any hashable value, used to identify to whom we are speaking
+        user_dict -- dictionary of information about the user, to be passed
+                        to rule methods
         message -- string (not bytestring!) to reply to
 
         Return value: string returned by rule(s)
@@ -93,8 +93,7 @@ class ChatbotEngine(object):
         self.rules_db.sort_rules()
         
         log.debug('Asked to reply to: "{0}" from {1}'.format(message, user))
-        self._set_user(user)
-        Script.botvars = self._botvars
+        self._setup_user(user, user_dict)
 
         try:
             reply = self._reply(user, message, 0)
@@ -103,7 +102,6 @@ class ChatbotEngine(object):
                       "referencing other rules too many "
                       "times".format(message),)
             raise
-        assert(Script.uservars is self._users[user].vars)
         self._remember(user, message, reply)
         return reply
 
@@ -114,17 +112,18 @@ class ChatbotEngine(object):
         
         log.debug('Searching for rule matching "{0}", depth == {1}'.format(
             message, depth))
-        topic = self._users[user].topic_name
+        userinfo = self._users[user]
+        topic = userinfo.topic_name
         target = Target(message, self.rules_db.topics[topic].substitutions)
         reply = ""
         
         for rule in self.rules_db.topics[topic].sortedrules:
-            m = rule.match(target, self._users[user].repl_history,
+            m = rule.match(target, userinfo.repl_history,
                            self._variables)
             if m is not None:
-                reply = self._reply_from_rule(rule, m)
+                reply = self._reply_from_rule(rule, m, userinfo)
                 self._check_for_topic_change(user, rule, topic,
-                                             Script.current_topic)
+                                             userinfo.topic_name)
                 break
 
         reply = self._recursively_expand_reply(user, reply, depth)
@@ -134,12 +133,15 @@ class ChatbotEngine(object):
             log.debug("Generated reply: " + reply)
         return reply
 
-    def _reply_from_rule(self, rule, rule_match):
+    def _reply_from_rule(self, rule, rule_match, userinfo):
         """ Given a rule and the results from a successful match of the rule's
         pattern, call the rule method and return the results. 
         """
         log.debug("Found match, rule {0}".format(rule.rulename))
-        Script.match = rule_match.dict
+
+        inst = get_method_self(rule.method)
+        inst.userinfo = userinfo
+        inst.match = rule_match.dict
         reply = rule.method()
         if not isinstance(reply, text_type):
             raise TypeError("Rule {0} returned something other than a "
@@ -176,9 +178,8 @@ class ChatbotEngine(object):
             log.debug("User {0} now in topic {1}".format(user, new_topic))
 
         self._users[user].topic_name = new_topic
-        Script.set_topic(new_topic)
 
-    def _set_user(self, user):
+    def _setup_user(self, user, user_dict):
         """ Set up the Script class to process a message from a user. If the
         user is new to us, create the UserInfo object for them, and call
         the setup_user method of all the script instances so they can
@@ -186,7 +187,7 @@ class ChatbotEngine(object):
         """
         new = (user not in self._users)
         if new:
-            self._users[user] = UserInfo()
+            self._users[user] = UserInfo(user_dict)
 
         self._variables["u"] = self._users[user].vars
         topic = self._users[user].topic_name
@@ -195,12 +196,10 @@ class ChatbotEngine(object):
                       "returning to 'all'".format(user, topic))
             topic = self._users[user].topic_name = "all"
 
-        Script.set_user(user, self._users[user].vars)
-        Script.set_topic(topic)
-        
         if new:
             log.debug("New user, running all scripts' setup_user methods")
             for inst in self.rules_db.script_instances:
+                inst.userinfo = self._users[user]
                 inst.setup_user(user)
             
     def _remember(self, user, message, reply):
@@ -211,19 +210,6 @@ class ChatbotEngine(object):
         user_info.repl_history.appendleft(
             Target(reply, self.rules_db.topics[topic_name].substitutions))
         
-class UserInfo(object):
-    """ A class for stashing per-user information. Public instance variables:
-    vars: a dictionary of variable names and values
-    topic_name: the name of the topic the user is currently in
-    msg_history: a deque containing Targets for a few recent messages
-    repl_history: a deque containing Targets for a few recent replies
-    """
-    def __init__(self):
-        self.vars = {}
-        self.topic_name = "all"
-        self.msg_history = collections.deque(maxlen=_HISTORY)
-        self.repl_history = collections.deque(maxlen=_HISTORY)
-
     
 class Target(object):
     """ A message prepared to be a match target.

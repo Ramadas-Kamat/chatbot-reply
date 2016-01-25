@@ -49,4 +49,4 @@ if __name__ == "__main__":
         elif msg == "/log error":
             log.setLevel(logging.ERROR)
         else:
-            print("Bot> " + ch.reply("local", msg))
+            print("Bot> " + ch.reply("local", {}, msg))

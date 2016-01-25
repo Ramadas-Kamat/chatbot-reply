@@ -60,7 +60,6 @@ class RulesDB(object):
         """
         self.rules_sorted = False
         ScriptRegistrar.clear()
-        Script.botvars = botvars
         
         for item in os.listdir(directory):
             if item.lower().endswith(".py"):
@@ -70,7 +69,7 @@ class RulesDB(object):
 
         for cls in ScriptRegistrar.registry:
             log.debug("Loading scripts from " + cls.__name__)
-            self._add_to_rulesdb(cls)
+            self._add_to_rulesdb(cls, botvars)
 
         if sum([len(t.rules) for k, t in self.topics.items()]) == 0:
             raise NoRulesFoundError(
@@ -91,7 +90,7 @@ class RulesDB(object):
         module = imp.load_module(modname, file, filename, data)
         return module
 
-    def _add_to_rulesdb(self, script_class):
+    def _add_to_rulesdb(self, script_class, botvars):
         """Given a subclass of Script, create an instance of it.  If it's
         topic is set to None, ignore it, otherwise search its
         attributes for methods that begin with "rule" or "substitute"
@@ -105,6 +104,7 @@ class RulesDB(object):
         if topic not in self.topics:
             self._new_topic(topic)
 
+        instance.botvars = botvars
         instance.setup()
         self.script_instances.append(instance)
         

@@ -235,9 +235,9 @@ class TestScript(Script):
 """
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
-        self.assertEqual(self.ch.reply("local", u"who"), u"echo who")
+        self.assertEqual(self.ch.reply("local", {}, u"who"), u"echo who")
         for i in range(100):
-            self.assertEqual(self.ch.reply("local", u"who"), u"echo")
+            self.assertEqual(self.ch.reply("local", {}, u"who"), u"echo")
         self.assertFalse(self.errorlogger.called)
 
     def test_Reply_Raises_WithBadRuleReturnString(self):
@@ -250,7 +250,7 @@ class TestScript(Script):
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
         self.assertRaisesCheckMessage(IndexError, "test.TestScript.rule_foo",
-                          self.ch.reply,"local", u"do you like spam")
+                                      self.ch.reply,"local", {}, u"do you like spam")
 
     def test_Reply_Raises_WithBadSubstitutionsReturnValue(self):
         py = self.py_imports + b"""
@@ -265,7 +265,7 @@ class TestScript(Script):
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
         self.assertRaisesCheckMessage(TypeError, "test.TestScript.rule_foo",
-                          self.ch.reply,"local", u"do you like spam")
+                                      self.ch.reply,"local", {}, u"do you like spam")
         
         
 
@@ -348,7 +348,7 @@ class TestScript(Script):
 """
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
-        self.assertRaises(NameError, self.ch.reply, "local", u"test")
+        self.assertRaises(NameError, self.ch.reply, "local", {}, u"test")
         
     def test_Reply_Chooses_HigherScoringRule(self):
         py = self.py_imports + b"""
@@ -384,7 +384,7 @@ class TestScript(Script):
         # lack of hash order, but I tried commenting out sorted() and it
         # triggered the assert.
         # could programatically write 10000 methods with wildcards...
-        self.assertEqual(self.ch.reply("local", u"hello world"), "pass")
+        self.assertEqual(self.ch.reply("local", {}, u"hello world"), "pass")
         self.assertFalse(self.errorlogger.called)
 
     def test_Reply_Error_OnInfiniteRecursion(self):
@@ -400,7 +400,7 @@ class TestScript(Script):
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
         self.assertRaisesCheckMessage(RecursionTooDeepError, u"one",
-                          self.ch.reply, "local", u"one")
+                                      self.ch.reply, "local", {}, u"one")
 
     def test_Reply_RespondsCorrectly_ToTwoUsers(self):
         py = self.py_imports + b"""
@@ -433,7 +433,7 @@ class TestScript(Script):
 class TestScriptMain(Script):
     @rule("change topic")
     def rule_change_topic(self):
-        Script.set_topic("test")
+        self.current_topic = "test"
         return "changed to test"
     @rule("topic")
     def rule_topic(self):
@@ -443,7 +443,7 @@ class TestScriptTest(Script):
     topic = "test"
     @rule("change topic")
     def rule_change_topic(self):
-        Script.set_topic("all")
+        self.current_topic = "all"
         return "changed to all"
     @rule("topic")
     def rule_topic(self):
@@ -464,7 +464,7 @@ class TestScriptMain(Script):
         return [[sub.get(w, w) for w in wl] for wl in wordlists]
     @rule("change topic")
     def rule_change_topic(self):
-        Script.set_topic("test")
+        self.current_topic = "test"
         return "changed to test"
     @rule("1 2 three")
     def rule_topic(self):
@@ -477,7 +477,7 @@ class TestScriptTest(Script):
         return [[sub.get(w, w) for w in wl] for wl in wordlists]
     @rule("change topic")
     def rule_change_topic(self):
-        Script.set_topic("all")
+        self.current_topic = "all"
         return "changed to all"
     @rule("one 2 3")
     def rule_topic(self):
@@ -504,7 +504,7 @@ class TestScriptTest(Script):
         self.write_py(py)
         self.ch.load_script_directory(self.scripts_dir)
         for user, msg, rep in conversation:
-            self.assertEqual(self.ch.reply(user, msg), rep)
+            self.assertEqual(self.ch.reply(user, {}, msg), rep)
         self.assertFalse(self.errorlogger.called)
         
     def write_py(self, py, filename="test.py"):
