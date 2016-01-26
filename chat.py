@@ -19,7 +19,7 @@ if __name__ == "__main__":
     handler.setFormatter(formatter)
     log.addHandler(handler)
     log.setLevel(logging.ERROR)
-    
+
     ch = ChatbotEngine()
     ch.load_script_directory("scripts")
     print ("Type /quit to quit, "
