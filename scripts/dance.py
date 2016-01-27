@@ -1,92 +1,85 @@
-#! /usr/bin/env python
-# Copyright (c) 2016 Gemini Lasswell
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
-from script import Script, pattern
+#Any copyright is dedicated to the Public Domain.
+#http://creativecommons.org/publicdomain/zero/1.0/
+from __future__ import unicode_literals
+from chatbot_reply import Script, rule
 
 class HokeyPokeyScript(Script):
-    def setUp(self):
-        Script.botvars["mood"] = "good"
-        Script.botvars["bodypart"] = "right foot"
-        Script.botvars["danced"] = False
+    def setup(self):
+        self.botvars["mood"] = "good"
+        self.botvars["bodypart"] = "right foot"
+        self.botvars["danced"] = False
         self.bodyparts = ['right foot', 'left foot', 'right arm',
                                        'left arm', 'whole self']
 
-    @pattern("how are you doing")
-    def pattern_how_are_you_doing(self):
-        mood = Script.botvars["mood"]
+    @rule("how are you doing")
+    def rule_how_are_you_doing(self):
+        mood = self.botvars["mood"]
         return "I'm in a {0} mood.".format(mood)
 
-    @pattern("get grumpy")
-    def pattern_get_grumpy(self):
-        Script.botvars["mood"] = "bad"
+    @rule("get grumpy")
+    def rule_get_grumpy(self):
+        self.botvars["mood"] = "bad"
         return "Now I'm grouchy."
 
-    @pattern("get happy")
-    def pattern_get_happy(self):
-        Script.botvars["mood"] = "good"
+    @rule("get happy")
+    def rule_get_happy(self):
+        self.botvars["mood"] = "good"
         return "I feel much better."
 
-    @pattern("hey [there]")
-    def pattern_hey_opt(self):
-        if Script.botvars["mood"] == "good":
+    @rule("hey [there]")
+    def rule_hey_opt(self):
+        if self.botvars["mood"] == "good":
             return "<hello>"
         else:
             return "Hay is for horses."
 
-    @pattern("hello _*")
-    def pattern_hello_star(self):
-        return "<hello> {0}".format(Script.match[0])
-
-    @pattern("knock knock")
-    def pattern_knock_knock(self):
+    @rule("knock knock")
+    def rule_knock_knock(self):
         return "Who's there?"
 
-    @pattern("_*", previous="who is there")
-    def pattern_star_prev_who_is_there(self):
-        return "{0} who?".format(Script.match[0])
+    @rule("_*", previous_reply="whos there")
+    def rule_star_prev_who_is_there(self):
+        return "{raw_match0} who?"
 
-    @pattern("_*", previous="* who")
-    def pattern_star_prev_star_who(self):
-        return "Lol %s! That's a good one!".format(Script.match[0])
+    @rule("_*", previous_reply="* who")
+    def rule_star_prev_star_who(self):
+        return "Lol {raw_match0}! That's a good one!"
 
-    @pattern("put your _* in")
-    def pattern_put_your_star_in(self):
-        return ("I put my {0} in, I put my {0} out, "
-                "I shake it all about!".format(Script.match[0]))
+    @rule("put your _* in")
+    def rule_put_your_star_in(self):
+        return ("I put my {match0} in, I put my {match0} out, "
+                "I shake it all about!")
 
-    @pattern("where are you in the dance")
-    def pattern_where_are_you_in_the_dance(self):
-        return "I'm about to use my {0}.".format(Script.botvars["bodypart"])
+    @rule("where are you in the dance")
+    def rule_where_are_you_in_the_dance(self):
+        return "I'm about to use my {0}.".format(self.botvars["bodypart"])
 
-    @pattern("back to the right foot")
-    def pattern_back_to_the_right_foot(self):
-        Script.botvars["bodypart"] = "right foot"
-        return ["OK, I'm back on the right foot."]
+    @rule("back to the right foot")
+    def rule_back_to_the_right_foot(self):
+        self.botvars["bodypart"] = "right foot"
+        return "OK, I'm back on the right foot."
 
-    @pattern("what would the next one be")
-    def pattern_what_would_the_next_one_be(self):
-        next_part = self.next_body_part(Script.botvars["bodypart"])
-        return "After {0} comes {1}.".format((Script.botvars["bodypart"],
-                                            next_part))
+    @rule("what would the next one be")
+    def rule_what_would_the_next_one_be(self):
+        next_part = self.next_body_part(self.botvars["bodypart"])
+        return "After {0} comes {1}.".format(self.botvars["bodypart"],
+                                            next_part)
 
-    @pattern("skip to the next one")
-    def pattern_skip_to_the_next_one(self):
-        Script.botvars["bodypart"] = self.next_body_part(Script.botvars["bodypart"])
-        return "OK, when I dance I'll use my {0}.".format(Script.botvars["bodypart"])
+    @rule("skip to the next one")
+    def rule_skip_to_the_next_one(self):
+        self.botvars["bodypart"] = self.next_body_part(self.botvars["bodypart"])
+        return "OK, when I dance I'll use my {0}.".format(self.botvars["bodypart"])
 
-    @pattern("do the hokey pokey")
-    def pattern_do_the_hokey_pokey(self):
-        Script.botvars["danced"] = True
-        bodypart = Script.botvars["bodypart"]
-        Script.botvars["bodypart"] = self.next_body_part(bodypart)
+    @rule("do the hokey pokey")
+    def rule_do_the_hokey_pokey(self):
+        self.botvars["danced"] = True
+        bodypart = self.botvars["bodypart"]
+        self.botvars["bodypart"] = self.next_body_part(bodypart)
         return "<put your {0} in>".format(bodypart)
     
-    @pattern("have you done the hokey pokey")
-    def pattern_have_you_done_the_hokey_pokey(self):
-        if Script.botvars["danced"]:
+    @rule("(have you done|did you do) the hokey pokey")
+    def rule_have_you_done_the_hokey_pokey(self):
+        if self.botvars["danced"]:
             return "Yes!"
         else:
             return "No, but I'd like to!"
